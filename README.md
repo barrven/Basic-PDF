@@ -1,4 +1,4 @@
-# PDF Editor
+# BasicPDF
 
 A lightweight desktop PDF editor built with Electron — no bundler, no frontend framework, just vanilla JS and native ES modules.
 

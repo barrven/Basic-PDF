@@ -6,8 +6,20 @@ let store = null
 async function getStore() {
   if (store) return store
   const Store = (await import('electron-store')).default
-  store = new Store({ name: 'pdf-editor' })
+  store = new Store({ name: 'basicpdf' })
+  migrateLegacyStore(store)
   return store
+}
+
+// One-time migration from the pre-rename store file (app was named "pdf-editor").
+function migrateLegacyStore(newStore) {
+  if (Object.keys(newStore.store).length > 0) return
+  const legacyPath = path.join(app.getPath('userData'), 'pdf-editor.json')
+  if (!fs.existsSync(legacyPath)) return
+  try {
+    const legacyData = JSON.parse(fs.readFileSync(legacyPath, 'utf-8'))
+    newStore.set(legacyData)
+  } catch {}
 }
 
 function createWindow() {
@@ -17,6 +29,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     backgroundColor: '#111111',
+    icon: path.join(__dirname, '..', 'icon.png'),
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#1C1C1C',
@@ -34,6 +47,9 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(path.join(__dirname, '..', 'icon.png'))
+  }
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
