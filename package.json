@@ -1,0 +1,22 @@
+{
+  "name": "pdf-editor",
+  "version": "1.0.0",
+  "description": "Desktop PDF editor (Electron)",
+  "author": "pdf-editor",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "build": "electron-builder"
+  },
+  "build": {},
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.0.0"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}

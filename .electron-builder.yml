@@ -1,0 +1,16 @@
+appId: com.example.pdfeditor
+productName: PDF Editor
+directories:
+  buildResources: build
+files:
+  - electron/**/*
+  - src/**/*
+  - index.html
+  - node_modules/**/*
+  - package.json
+win:
+  target: nsis
+mac:
+  target: dmg
+linux:
+  target: AppImage

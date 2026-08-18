@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PDF Editor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="src/style.css" />
+  </head>
+  <body>
+    <div id="titlebar" style="-webkit-app-region: drag">
+      <div id="app-name">PDF Editor</div>
+      <div id="filename"></div>
+      <div id="window-controls-spacer"></div>
+    </div>
+    <div id="toolbar"></div>
+    <div id="workspace">
+      <div id="sidebar">
+        <div id="thumbnail-list"></div>
+      </div>
+      <div id="resize-handle"></div>
+      <div id="preview-pane">
+        <div id="preview-container">
+          <canvas id="preview-canvas"></canvas>
+          <div id="signature-overlay-layer"></div>
+          <div id="placement-ghost" hidden></div>
+        </div>
+        <div id="empty-state">
+          <h2>No PDF open</h2>
+          <p>Click "Open" in the toolbar or press Ctrl/Cmd+O to load a file.</p>
+        </div>
+      </div>
+    </div>
+    <div id="modal-backdrop" hidden>
+      <div id="signature-modal">
+        <div class="modal-header">
+          <h2>Add signature</h2>
+          <button class="modal-close" data-action="close-sig-modal" aria-label="Close">×</button>
+        </div>
+        <div class="modal-tabs">
+          <button class="tab-btn" data-tab="draw" data-active="true">Draw</button>
+          <button class="tab-btn" data-tab="upload">Upload</button>
+        </div>
+        <div class="modal-body">
+          <div class="tab-panel" data-panel="draw" data-active="true">
+            <canvas id="draw-canvas" width="480" height="200"></canvas>
+            <div class="modal-row">
+              <button class="btn-secondary" data-action="clear-draw">Clear</button>
+              <span id="draw-error" hidden></span>
+              <div class="modal-spacer"></div>
+              <button class="btn-primary" data-action="confirm-draw">Use signature</button>
+            </div>
+          </div>
+          <div class="tab-panel" data-panel="upload">
+            <div id="upload-zone">
+              <p id="upload-zone-text">Drag an image here, or</p>
+              <button class="btn-secondary" data-action="browse-upload">Browse</button>
+              <input type="file" id="upload-input" accept="image/png,image/jpeg,image/webp" hidden />
+              <img id="upload-preview" hidden alt="" />
+              <p id="upload-error" hidden></p>
+            </div>
+            <div class="modal-row">
+              <div class="modal-spacer"></div>
+              <button class="btn-primary" data-action="confirm-upload" disabled>Use signature</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="error-modal-backdrop" hidden>
+      <div id="error-modal">
+        <div class="modal-header">
+          <h2>Error</h2>
+        </div>
+        <div class="modal-body">
+          <p id="error-modal-message"></p>
+          <div class="modal-row">
+            <div class="modal-spacer"></div>
+            <button class="btn-primary" data-action="close-error-modal">OK</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="sig-popover" hidden></div>
+    <div id="toast" hidden></div>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
