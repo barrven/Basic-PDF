@@ -1,5 +1,5 @@
 import { appState, dispatch } from './state.js'
-import { getPage, drawBlankPlaceholder } from './renderer.js'
+import { getPage, drawBlankPlaceholder, PAGE_SIZE_A4, visualPageSize } from './renderer.js'
 import { handlePlacementClick, handlePlacementMove, isPlacing, exitPlacementMode } from './signature.js'
 
 let currentScale = 1
@@ -55,6 +55,7 @@ export async function renderPreview() {
   const pane = document.getElementById('preview-pane')
   const empty = document.getElementById('empty-state')
   const overlayLayer = document.getElementById('signature-overlay-layer')
+  const myToken = ++lastRenderToken
   if (!appState.filePath || appState.pages.length === 0) {
     canvas.width = 0
     canvas.height = 0
@@ -65,21 +66,20 @@ export async function renderPreview() {
   if (empty) empty.hidden = true
 
   const entry = appState.pages[appState.focusedPage]
-  const myToken = ++lastRenderToken
+  if (!entry) return
   try {
     if (entry.originalIndex === -1) {
-      const baseWidth = 595
-      const baseHeight = 842
+      const size = visualPageSize(PAGE_SIZE_A4.width, PAGE_SIZE_A4.height, entry.rotation)
       let scale
       if (appState.zoom === null) {
-        scale = (pane.clientWidth - 48) / baseWidth
+        scale = (pane.clientWidth - 48) / size.width
       } else {
         scale = appState.zoom / 100
       }
       currentScale = scale
-      currentPdfPageWidth = baseWidth
-      currentPdfPageHeight = baseHeight
-      drawBlankPlaceholder(canvas, baseWidth * scale, baseHeight * scale)
+      currentPdfPageWidth = size.width
+      currentPdfPageHeight = size.height
+      drawBlankPlaceholder(canvas, size.width * scale, size.height * scale)
     } else {
       const page = await getPage(entry.sourceId, entry.originalIndex)
       const baseViewport = page.getViewport({ scale: 1, rotation: entry.rotation })
@@ -93,13 +93,21 @@ export async function renderPreview() {
       currentPdfPageWidth = baseViewport.width
       currentPdfPageHeight = baseViewport.height
       const viewport = page.getViewport({ scale, rotation: entry.rotation })
-      canvas.width = Math.floor(viewport.width)
-      canvas.height = Math.floor(viewport.height)
-      const ctx = canvas.getContext('2d')
+      // Render offscreen so a newer request can start without hitting
+      // pdf.js's "same canvas during multiple render()" error.
+      const offscreen = document.createElement('canvas')
+      offscreen.width = Math.floor(viewport.width)
+      offscreen.height = Math.floor(viewport.height)
+      const ctx = offscreen.getContext('2d')
       await page.render({ canvasContext: ctx, viewport }).promise
       if (myToken !== lastRenderToken) return
+      canvas.width = offscreen.width
+      canvas.height = offscreen.height
+      canvas.getContext('2d').drawImage(offscreen, 0, 0)
     }
   } catch (err) {
+    if (myToken !== lastRenderToken) return
+    if (err && err.name === 'RenderingCancelledException') return
     console.error('preview render failed', err)
     const ctx = canvas.getContext('2d')
     canvas.width = 600

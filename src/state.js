@@ -1,5 +1,65 @@
 export const PRIMARY_SOURCE_ID = 'primary'
 
+export function normalizeRotation(angle) {
+  const n = Number(angle) || 0
+  const wrapped = ((n % 360) + 360) % 360
+  return (Math.round(wrapped / 90) * 90) % 360
+}
+
+export function createPageEntry({ sourceId = null, originalIndex, rotation = 0 } = {}) {
+  return {
+    id: crypto.randomUUID(),
+    sourceId,
+    originalIndex,
+    rotation: normalizeRotation(rotation),
+  }
+}
+
+function remapSignatures(oldPages, newPages, signatures) {
+  if (!oldPages.length || !signatures.length) return signatures
+  const idToNewIndex = new Map()
+  for (let i = 0; i < newPages.length; i++) {
+    const id = newPages[i]?.id
+    if (id) idToNewIndex.set(id, i)
+  }
+  if (idToNewIndex.size === 0) return signatures
+  return signatures
+    .filter((s) => {
+      const oldId = oldPages[s.pageIndex]?.id
+      return oldId != null && idToNewIndex.has(oldId)
+    })
+    .map((s) => ({
+      ...s,
+      pageIndex: idToNewIndex.get(oldPages[s.pageIndex].id),
+    }))
+}
+
+function remapSelection(oldPages, newPages, selectedPages) {
+  const next = new Set()
+  if (!selectedPages || selectedPages.size === 0) return next
+  const idToNewIndex = new Map()
+  for (let i = 0; i < newPages.length; i++) {
+    const id = newPages[i]?.id
+    if (id) idToNewIndex.set(id, i)
+  }
+  if (idToNewIndex.size === 0) return selectedPages
+  for (const idx of selectedPages) {
+    const id = oldPages[idx]?.id
+    if (id != null && idToNewIndex.has(id)) next.add(idToNewIndex.get(id))
+  }
+  return next
+}
+
+function remapFocusedPage(oldPages, newPages, focusedPage) {
+  const oldId = oldPages[focusedPage]?.id
+  if (oldId) {
+    const idx = newPages.findIndex((p) => p.id === oldId)
+    if (idx >= 0) return idx
+  }
+  if (newPages.length === 0) return 0
+  return Math.min(Math.max(0, focusedPage), newPages.length - 1)
+}
+
 export const appState = {
   filePath: null,
   fileBytes: null,
@@ -63,7 +123,7 @@ export function dispatch(action) {
       appState.sources = {}
       appState.pages = action.pages
       appState.signatures = []
-      appState.selectedPages = new Set()
+      appState.selectedPages = action.pages.length > 0 ? new Set([0]) : new Set()
       appState.focusedPage = 0
       appState.dirty = false
       appState.placementSig = null
@@ -115,19 +175,27 @@ export function dispatch(action) {
           [action.sourceId]: { bytes: action.sourceBytes },
         }
       }
+      const oldPages = appState.pages
+      appState.signatures = remapSignatures(oldPages, action.pages, appState.signatures)
+      appState.selectedPages = remapSelection(oldPages, action.pages, appState.selectedPages)
       appState.pages = action.pages
-      appState.signatures = appState.signatures.map((s) =>
-        s.pageIndex >= action.shiftFromIndex
-          ? { ...s, pageIndex: s.pageIndex + action.shiftDelta }
-          : s
-      )
-      appState.focusedPage = action.focusedPage
+      appState.focusedPage =
+        action.focusedPage != null
+          ? action.focusedPage
+          : remapFocusedPage(oldPages, action.pages, appState.focusedPage)
       appState.dirty = true
       break
     }
     case 'SET_PAGE_ORDER': {
       pushHistory()
+      const oldPages = appState.pages
+      appState.signatures = remapSignatures(oldPages, action.pages, appState.signatures)
+      appState.selectedPages = remapSelection(oldPages, action.pages, appState.selectedPages)
+      appState.focusedPage = remapFocusedPage(oldPages, action.pages, appState.focusedPage)
       appState.pages = action.pages
+      if (appState.selectedSig && !appState.signatures.some((s) => s.id === appState.selectedSig)) {
+        appState.selectedSig = null
+      }
       appState.dirty = true
       break
     }

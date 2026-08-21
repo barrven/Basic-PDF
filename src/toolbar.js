@@ -1,4 +1,4 @@
-import { appState, dispatch } from './state.js'
+import { appState, dispatch, createPageEntry, normalizeRotation } from './state.js'
 import { openFile, save, saveAs, closeFile } from './pdf-engine.js'
 import { addPdfSource } from './renderer.js'
 import { showSignatureModal, toggleSigPopover } from './signature.js'
@@ -47,7 +47,7 @@ export function initToolbar() {
   bar.appendChild(makeButton('save', 'Save', 'save', { title: 'Save (Ctrl/Cmd+S)' }))
   bar.appendChild(makeButton('save-as', 'Save As', 'save-as', { title: 'Save As (Ctrl/Cmd+Shift+S)' }))
   bar.appendChild(makeSep())
-  // bar.appendChild(makeButton('add-blank', 'Add page', 'add-blank'))
+  bar.appendChild(makeButton('add-blank', 'Add page', 'add-blank'))
   bar.appendChild(makeButton('insert-pdf', 'Insert PDF', 'insert-pdf'))
   bar.appendChild(makeButton('delete-pages', 'Delete', 'delete-pages'))
   bar.appendChild(makeSep())
@@ -144,7 +144,7 @@ async function onToolbarClick(e) {
     case 'add-blank': {
       const insertAt = appState.focusedPage + 1
       const newPages = [...appState.pages]
-      newPages.splice(insertAt, 0, { sourceId: null, originalIndex: -1, rotation: 0 })
+      newPages.splice(insertAt, 0, createPageEntry({ sourceId: null, originalIndex: -1, rotation: 0 }))
       dispatch({ type: 'SET_PAGE_ORDER', pages: newPages })
       dispatch({ type: 'SET_FOCUSED_PAGE', page: insertAt })
       break
@@ -190,7 +190,7 @@ async function insertPdfFile() {
     const { PDFDocument } = await import('../node_modules/pdf-lib/dist/pdf-lib.esm.js')
 
     // Validate the file is a real PDF and get its page count.
-    const insertedDoc = await PDFDocument.load(result.buffer)
+    const insertedDoc = await PDFDocument.load(result.buffer, { ignoreEncryption: true })
     const insertCount = insertedDoc.getPageCount()
     if (insertCount === 0) return
 
@@ -201,11 +201,14 @@ async function insertPdfFile() {
     await addPdfSource(sourceId, result.buffer)
 
     const insertAt = appState.focusedPage + 1
-    const insertedEntries = Array.from({ length: insertCount }, (_, i) => ({
-      sourceId,
-      originalIndex: i,
-      rotation: 0,
-    }))
+    const insertedEntries = Array.from({ length: insertCount }, (_, i) => {
+      const angle = insertedDoc.getPage(i).getRotation().angle
+      return createPageEntry({
+        sourceId,
+        originalIndex: i,
+        rotation: normalizeRotation(angle),
+      })
+    })
     const newPages = [
       ...appState.pages.slice(0, insertAt),
       ...insertedEntries,
@@ -229,29 +232,27 @@ async function insertPdfFile() {
   }
 }
 
-function deleteSelectedPages() {
-  if (appState.selectedPages.size === 0) return
-  if (appState.pages.length - appState.selectedPages.size < 1) return
-  const sel = appState.selectedPages
-  const newPages = appState.pages.filter((_, i) => !sel.has(i))
-  dispatch({ type: 'SET_PAGE_ORDER', pages: newPages })
-  dispatch({ type: 'SET_SELECTED_PAGES', pages: new Set() })
-  if (appState.focusedPage >= newPages.length) {
-    dispatch({ type: 'SET_FOCUSED_PAGE', page: Math.max(0, newPages.length - 1) })
-  }
+function targetPageIndices() {
+  if (appState.selectedPages.size > 0) return [...appState.selectedPages]
+  if (appState.pages.length === 0) return []
+  return [appState.focusedPage]
 }
 
-function rotateSelected(delta) {
-  const targetIndices =
-    appState.selectedPages.size > 0
-      ? [...appState.selectedPages]
-      : [appState.focusedPage]
+export function deleteSelectedPages() {
+  const sel = new Set(targetPageIndices())
+  if (sel.size === 0) return
+  if (appState.pages.length - sel.size < 1) return
+  const newPages = appState.pages.filter((_, i) => !sel.has(i))
+  dispatch({ type: 'SET_PAGE_ORDER', pages: newPages })
+  dispatch({ type: 'SET_SELECTED_PAGES', pages: new Set([appState.focusedPage]) })
+}
+
+export function rotateSelected(delta) {
+  const targetIndices = targetPageIndices()
   if (targetIndices.length === 0) return
-  // Per-page rotation, not bulk to single value: we need a different action.
-  // To keep state action simple, build per-index dispatches by composing pages.
   const newPages = appState.pages.map((p, i) =>
     targetIndices.includes(i)
-      ? { ...p, rotation: (((p.rotation + delta) % 360) + 360) % 360 }
+      ? { ...p, rotation: normalizeRotation(p.rotation + delta) }
       : p
   )
   dispatch({ type: 'SET_PAGE_ORDER', pages: newPages })
@@ -270,8 +271,7 @@ export function updateToolbar() {
     'close-file': !fileOpen,
     'delete-pages':
       !fileOpen ||
-      appState.selectedPages.size === 0 ||
-      appState.pages.length - appState.selectedPages.size < 1,
+      appState.pages.length <= 1,
   }
   for (const [action, disabled] of Object.entries(map)) {
     const btn = document.querySelector(`#toolbar [data-action="${action}"]`)

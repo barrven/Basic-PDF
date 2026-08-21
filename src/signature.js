@@ -231,11 +231,30 @@ async function nextSigName() {
   return 'Signature ' + (lib.length + 1)
 }
 
+async function toEmbeddableDataUrl(dataUrl) {
+  if (
+    dataUrl.startsWith('data:image/png') ||
+    dataUrl.startsWith('data:image/jpeg') ||
+    dataUrl.startsWith('data:image/jpg')
+  ) {
+    return dataUrl
+  }
+  const img = new Image()
+  img.src = dataUrl
+  await img.decode()
+  const canvas = document.createElement('canvas')
+  canvas.width = img.naturalWidth || 1
+  canvas.height = img.naturalHeight || 1
+  canvas.getContext('2d').drawImage(img, 0, 0)
+  return canvas.toDataURL('image/png')
+}
+
 async function onSignatureConfirmed(dataUrl) {
+  const embeddable = await toEmbeddableDataUrl(dataUrl)
   const name = await nextSigName()
-  await addToLibrary({ id: nanoid(), name, dataUrl, createdAt: Date.now() })
+  await addToLibrary({ id: nanoid(), name, dataUrl: embeddable, createdAt: Date.now() })
   hideSignatureModal()
-  enterPlacementMode(dataUrl)
+  enterPlacementMode(embeddable)
 }
 
 export function enterPlacementMode(dataUrl) {

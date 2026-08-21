@@ -28,6 +28,11 @@ export async function addPdfSource(sourceId, bytes) {
   return loadPdfSource(sourceId, bytes)
 }
 
+export function clearPdfSources() {
+  pdfDocs.clear()
+  primaryBytes = null
+}
+
 export function getPdfDoc() {
   return pdfDocs.get(PRIMARY_SOURCE_ID) || null
 }
@@ -57,3 +62,9 @@ export function drawBlankPlaceholder(canvas, width, height) {
 }
 
 export const PAGE_SIZE_A4 = { width: 595, height: 842 }
+
+export function visualPageSize(width, height, rotation) {
+  const rot = ((rotation % 360) + 360) % 360
+  if (rot === 90 || rot === 270) return { width: height, height: width }
+  return { width, height }
+}

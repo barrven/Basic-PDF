@@ -1,5 +1,5 @@
-import { appState, dispatch } from './state.js'
-import { getPage, drawBlankPlaceholder } from './renderer.js'
+import { appState, dispatch, createPageEntry, normalizeRotation } from './state.js'
+import { getPage, drawBlankPlaceholder, PAGE_SIZE_A4, visualPageSize } from './renderer.js'
 
 const SIDEBAR_MIN = 160
 const SIDEBAR_MAX = 360
@@ -93,10 +93,9 @@ export async function renderThumbnails() {
 
 async function renderThumbCanvas(entry, canvas, canvasMax) {
   if (entry.originalIndex === -1) {
-    const ratio = 595 / 842
-    const w = canvasMax
-    const h = w / ratio
-    drawBlankPlaceholder(canvas, w, h)
+    const size = visualPageSize(PAGE_SIZE_A4.width, PAGE_SIZE_A4.height, entry.rotation)
+    const scale = canvasMax / size.width
+    drawBlankPlaceholder(canvas, size.width * scale, size.height * scale)
     return
   }
   const page = await getPage(entry.sourceId, entry.originalIndex)
@@ -240,40 +239,37 @@ function applyContextChoice(choice, idx) {
       if (appState.pages.length <= 1) return
       const newPages = appState.pages.filter((_, i) => i !== idx)
       dispatch({ type: 'SET_PAGE_ORDER', pages: newPages })
-      const newFocus = Math.min(appState.focusedPage, newPages.length - 1)
-      dispatch({ type: 'SET_FOCUSED_PAGE', page: Math.max(0, newFocus) })
-      const newSel = new Set()
-      for (const s of appState.selectedPages) {
-        if (s < idx) newSel.add(s)
-        else if (s > idx) newSel.add(s - 1)
-      }
-      dispatch({ type: 'SET_SELECTED_PAGES', pages: newSel })
       break
     }
     case 'Rotate left': {
       const newPages = appState.pages.map((p, i) =>
-        i === idx ? { ...p, rotation: (((p.rotation - 90) % 360) + 360) % 360 } : p
+        i === idx ? { ...p, rotation: normalizeRotation(p.rotation - 90) } : p
       )
       dispatch({ type: 'SET_PAGE_ORDER', pages: newPages })
       break
     }
     case 'Rotate right': {
       const newPages = appState.pages.map((p, i) =>
-        i === idx ? { ...p, rotation: (p.rotation + 90) % 360 } : p
+        i === idx ? { ...p, rotation: normalizeRotation(p.rotation + 90) } : p
       )
       dispatch({ type: 'SET_PAGE_ORDER', pages: newPages })
       break
     }
     case 'Duplicate page': {
+      const src = appState.pages[idx]
       const newPages = [...appState.pages]
-      newPages.splice(idx + 1, 0, { ...appState.pages[idx] })
+      newPages.splice(idx + 1, 0, createPageEntry({
+        sourceId: src.sourceId,
+        originalIndex: src.originalIndex,
+        rotation: src.rotation,
+      }))
       dispatch({ type: 'SET_PAGE_ORDER', pages: newPages })
       dispatch({ type: 'SET_FOCUSED_PAGE', page: idx + 1 })
       break
     }
     case 'Insert blank page after': {
       const newPages = [...appState.pages]
-      newPages.splice(idx + 1, 0, { sourceId: null, originalIndex: -1, rotation: 0 })
+      newPages.splice(idx + 1, 0, createPageEntry({ sourceId: null, originalIndex: -1, rotation: 0 }))
       dispatch({ type: 'SET_PAGE_ORDER', pages: newPages })
       dispatch({ type: 'SET_FOCUSED_PAGE', page: idx + 1 })
       break

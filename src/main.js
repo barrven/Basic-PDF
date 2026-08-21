@@ -131,6 +131,12 @@ function init() {
     console.error('unhandledrejection', e.reason)
     showToast('An unexpected error occurred.')
   })
+
+  window.addEventListener('beforeunload', (e) => {
+    if (!appState.dirty) return
+    e.preventDefault()
+    e.returnValue = ''
+  })
 }
 
 if (document.readyState === 'loading') {

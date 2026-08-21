@@ -1,6 +1,7 @@
 import { appState, dispatch } from './state.js'
 import { openFile, save, saveAs } from './pdf-engine.js'
 import { exitPlacementMode, isPlacing } from './signature.js'
+import { deleteSelectedPages, rotateSelected } from './toolbar.js'
 
 export function initShortcuts() {
   document.addEventListener('keydown', onKeyDown)
@@ -54,15 +55,7 @@ async function onKeyDown(e) {
       dispatch({ type: 'DELETE_SIGNATURE', id: appState.selectedSig })
       return
     }
-    if (appState.selectedPages.size === 0) return
-    if (appState.pages.length - appState.selectedPages.size < 1) return
-    const sel = appState.selectedPages
-    const newPages = appState.pages.filter((_, i) => !sel.has(i))
-    dispatch({ type: 'SET_PAGE_ORDER', pages: newPages })
-    dispatch({ type: 'SET_SELECTED_PAGES', pages: new Set() })
-    if (appState.focusedPage >= newPages.length) {
-      dispatch({ type: 'SET_FOCUSED_PAGE', page: Math.max(0, newPages.length - 1) })
-    }
+    deleteSelectedPages()
     return
   }
   if (e.key === 'Escape') {
@@ -86,14 +79,18 @@ async function onKeyDown(e) {
   if (e.key === 'ArrowUp') {
     if (appState.focusedPage > 0) {
       e.preventDefault()
-      dispatch({ type: 'SET_FOCUSED_PAGE', page: appState.focusedPage - 1 })
+      const next = appState.focusedPage - 1
+      dispatch({ type: 'SET_FOCUSED_PAGE', page: next })
+      if (!e.shiftKey) dispatch({ type: 'SET_SELECTED_PAGES', pages: new Set([next]) })
     }
     return
   }
   if (e.key === 'ArrowDown') {
     if (appState.focusedPage < appState.pages.length - 1) {
       e.preventDefault()
-      dispatch({ type: 'SET_FOCUSED_PAGE', page: appState.focusedPage + 1 })
+      const next = appState.focusedPage + 1
+      dispatch({ type: 'SET_FOCUSED_PAGE', page: next })
+      if (!e.shiftKey) dispatch({ type: 'SET_SELECTED_PAGES', pages: new Set([next]) })
     }
     return
   }
@@ -108,21 +105,13 @@ async function onKeyDown(e) {
   if (e.key === '[') {
     if (appState.pages.length === 0) return
     e.preventDefault()
-    const targets = appState.selectedPages.size > 0 ? [...appState.selectedPages] : [appState.focusedPage]
-    const newPages = appState.pages.map((p, i) =>
-      targets.includes(i) ? { ...p, rotation: (((p.rotation - 90) % 360) + 360) % 360 } : p
-    )
-    dispatch({ type: 'SET_PAGE_ORDER', pages: newPages })
+    rotateSelected(-90)
     return
   }
   if (e.key === ']') {
     if (appState.pages.length === 0) return
     e.preventDefault()
-    const targets = appState.selectedPages.size > 0 ? [...appState.selectedPages] : [appState.focusedPage]
-    const newPages = appState.pages.map((p, i) =>
-      targets.includes(i) ? { ...p, rotation: (p.rotation + 90) % 360 } : p
-    )
-    dispatch({ type: 'SET_PAGE_ORDER', pages: newPages })
+    rotateSelected(90)
     return
   }
 }
