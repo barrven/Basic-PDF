@@ -1,7 +1,7 @@
 import { appState, subscribe } from './state.js'
 import { initToolbar, updateToolbar, updatePageCounter, updateZoomLabel } from './toolbar.js'
 import { initSidebar, renderThumbnails, updateSelectionStyles, scrollFocusedIntoView } from './sidebar.js'
-import { initPreview, renderPreview, renderSignatureOverlays } from './preview.js'
+import { initPreview, renderPreview, renderSignatureOverlays, scrollPreviewToFocused } from './preview.js'
 import { initSignature } from './signature.js'
 import { initShortcuts } from './shortcuts.js'
 
@@ -76,10 +76,13 @@ export function render() {
   if (pagesChanged || fileChanged) {
     renderThumbnails().catch((e) => console.error(e))
   }
-  if (pagesChanged || focusedChanged || zoomChanged || fileChanged) {
+  if (pagesChanged || zoomChanged || fileChanged) {
     renderPreview().catch((e) => console.error(e))
   } else if (sigsChanged || selectedSigChanged) {
     renderSignatureOverlays()
+  }
+  if (focusedChanged && !pagesChanged && !zoomChanged && !fileChanged) {
+    scrollPreviewToFocused()
   }
   if (selChanged) {
     updateSelectionStyles()

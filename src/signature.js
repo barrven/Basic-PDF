@@ -270,8 +270,10 @@ export function enterPlacementMode(dataUrl) {
   placementGhostImg = img
   img.onload = () => {
     placementImgNatural = { w: img.naturalWidth || 1, h: img.naturalHeight || 1 }
-    const canvas = document.getElementById('preview-canvas')
-    const widthPx = (canvas.width || 600) * 0.30
+    const canvas =
+      document.querySelector(`.preview-page[data-index="${appState.focusedPage}"] canvas`) ||
+      document.querySelector('.preview-page canvas')
+    const widthPx = (canvas?.width || 600) * 0.30
     const heightPx = widthPx * (placementImgNatural.h / placementImgNatural.w)
     ghost.style.width = widthPx + 'px'
     ghost.style.height = heightPx + 'px'
@@ -292,38 +294,43 @@ export function isPlacing() {
   return appState.placementSig !== null
 }
 
-export function handlePlacementMove(e) {
+export function handlePlacementMove(e, pageView) {
   const ghost = document.getElementById('placement-ghost')
-  const pane = document.getElementById('preview-pane')
-  const paneRect = pane.getBoundingClientRect()
   const container = document.getElementById('preview-container')
   const cRect = container.getBoundingClientRect()
-  // Position inside container coordinate space so it overlays canvas correctly.
+  // Position inside container coordinate space so it overlays pages correctly.
   const x = e.clientX - cRect.left
   const y = e.clientY - cRect.top
   ghost.style.left = x + 'px'
   ghost.style.top = y + 'px'
-  void paneRect
+  if (pageView && placementImgNatural.w) {
+    const widthPx = pageView.pdfWidth * pageView.scale * 0.30
+    const heightPx = widthPx * (placementImgNatural.h / placementImgNatural.w)
+    ghost.style.width = widthPx + 'px'
+    ghost.style.height = heightPx + 'px'
+  }
 }
 
-export function handlePlacementClick(e, currentScale, canvas) {
+export function handlePlacementClick(e, pageView) {
   if (!appState.placementSig) return
-  const rect = canvas.getBoundingClientRect()
-  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
-    // Click outside the canvas exits placement mode.
+  if (!pageView) {
     exitPlacementMode()
     return
   }
-  const x = (e.clientX - rect.left) / currentScale
-  const y = (e.clientY - rect.top) / currentScale
-  const baseWidthPdf = canvas.width / currentScale
-  const width = baseWidthPdf * 0.30
+  const rect = pageView.canvas.getBoundingClientRect()
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+    exitPlacementMode()
+    return
+  }
+  const x = (e.clientX - rect.left) / pageView.scale
+  const y = (e.clientY - rect.top) / pageView.scale
+  const width = pageView.pdfWidth * 0.30
   const height = width * (placementImgNatural.h / placementImgNatural.w)
   dispatch({
     type: 'ADD_SIGNATURE',
     signature: {
       id: nanoid(),
-      pageIndex: appState.focusedPage,
+      pageIndex: pageView.index,
       x,
       y,
       width,

@@ -76,6 +76,15 @@ async function onKeyDown(e) {
     }
     return
   }
+  if (e.key === 'PageDown' || e.key === 'PageUp') {
+    if (modalIsOpen()) return
+    const pane = document.getElementById('preview-pane')
+    if (!pane || !appState.filePath) return
+    e.preventDefault()
+    const dir = e.key === 'PageDown' ? 1 : -1
+    pane.scrollBy({ top: dir * pane.clientHeight * 0.9, behavior: 'auto' })
+    return
+  }
   if (e.key === 'ArrowUp') {
     if (appState.focusedPage > 0) {
       e.preventDefault()
