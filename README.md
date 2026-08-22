@@ -4,11 +4,16 @@ A lightweight desktop PDF editor built with Electron — no bundler, no frontend
 
 ## Features
 
-- Open, edit, and save PDF files
-- Reorder, rotate, insert, and delete pages
+- Open, edit, save, and close PDF files
+- Continuous-scroll preview of all pages (fit-to-width or stepped zoom)
+- Reorder pages by dragging thumbnails
+- Rotate, insert, duplicate, and delete pages
 - Insert blank pages or pages from other PDFs
-- Draw or upload signatures and place them on pages, with a reusable signature library
+- Source page rotation is preserved on open, insert, and save
+- Draw or upload signatures (PNG, JPEG, or WebP) and place them on any page
+- Reusable signature library (up to 20 saved signatures)
 - Undo/redo (up to 50 steps)
+- Prompt before discarding unsaved changes
 - Keyboard shortcuts for common actions
 
 ## Getting started
@@ -38,7 +43,11 @@ Build targets are configured in `.electron-builder.yml`: NSIS (Windows), DMG (ma
 | `[` / `]` | Rotate page left / right |
 | `Ctrl/Cmd+A` | Select all pages |
 | `Delete` / `Backspace` | Delete selected pages or signature |
+| `ArrowUp` / `ArrowDown` | Previous / next page |
+| `PageUp` / `PageDown` | Scroll the preview by about one viewport |
 | `Escape` | Cancel placement / deselect |
+
+Right-click a thumbnail for delete, rotate, duplicate, and insert blank page.
 
 ## Architecture
 

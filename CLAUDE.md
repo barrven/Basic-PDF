@@ -25,34 +25,46 @@ This is a vanilla-JS Electron desktop app with no bundler and no frontend framew
 
 `src/main.js` is the entry point. It boots all modules and subscribes a single `render()` function to the state store. The render function diffs the previous and current state to decide which sub-renders to call — it is the only place that drives UI updates.
 
+- `pages` / `zoom` / `filePath` changes rebuild the preview stack (`renderPreview()`).
+- `focusedPage` alone scrolls the existing stack (`scrollPreviewToFocused()`); it does not re-rasterize canvases.
+- `signatures` / `selectedSig` changes only refresh overlay DOM.
+
 **State** (`src/state.js`) is a single `appState` object mutated only through `dispatch(action)`. Subscribers are notified after every dispatch. Undo/redo snapshots only `pages` and `signatures` (not zoom, selection, etc.), capped at 50 entries.
 
 **Two-library PDF model**: The app uses two separate PDF libraries with distinct roles:
 - **pdf.js** (`src/renderer.js`) — renders pages to `<canvas>` for display only. Each loaded file is keyed by a `sourceId` in a module-level `Map`.
-- **pdf-lib** (`src/pdf-engine.js`) — assembles the output document at save time. `buildOutputDoc()` copies pages from every source (by `sourceId`) into a fresh `PDFDocument`, applies rotations, and embeds signature images.
+- **pdf-lib** (`src/pdf-engine.js`) — assembles the output document at save time. `buildOutputDoc()` copies pages from every source (by `sourceId`) into a fresh `PDFDocument`, applies rotations (always, including 0), and embeds signature images.
 
-**Pages model**: `appState.pages` is an array of `{ sourceId, originalIndex, rotation }` entries. Inserting a PDF creates a new `sourceId`; the primary file always uses `PRIMARY_SOURCE_ID = 'primary'`. A blank page is represented by `originalIndex === -1`.
+**Pages model**: `appState.pages` is an array of `{ id, sourceId, originalIndex, rotation }` entries created via `createPageEntry()`. `id` is a UUID used to remap signatures, selection, and focus when pages are reordered, inserted, duplicated, or deleted. Inserting a PDF creates a new `sourceId`; the primary file always uses `PRIMARY_SOURCE_ID = 'primary'`. A blank page is represented by `originalIndex === -1`. `rotation` is the absolute display/save angle (0/90/180/270), seeded from the source page's `/Rotate` on open or insert — not an additive delta.
 
-**Signatures** are stored as `{ id, pageIndex, x, y, width, height, opacity, dataUrl }` in `appState.signatures`. Coordinates are in pdf.js top-left space; `buildOutputDoc()` converts to pdf-lib bottom-left space when embedding. The saved library (persisted via `electron-store`) is capped at 20 entries in `src/store.js`.
+**Signatures** are stored as `{ id, pageIndex, x, y, width, height, opacity, dataUrl }` in `appState.signatures`. Coordinates are in pdf.js visual top-left space for the page at its current rotation. `buildOutputDoc()` converts those into pdf-lib's unrotated media-box space (and rotates the image) when embedding. `SET_PAGE_ORDER` / `INSERT_PAGES` remap `pageIndex` by page `id` so stamps follow the page they were placed on. The saved library (persisted via `electron-store`) is capped at 20 entries in `src/store.js`. WebP uploads are rasterized to PNG before save.
+
+### Preview
+
+The preview pane (`#preview-pane`) is a continuous vertical stack of `.preview-page` nodes (canvas + per-page signature overlay), not a single-page canvas. Pages are measured, laid out, then rasterized lazily with `IntersectionObserver` (`src/preview.js`). Fit-to-width scales each page to the pane width; numeric zoom uses a shared `%` scale. Scrolling updates `focusedPage` (and single-page selection) from whichever page sits near the top of the viewport. Thumbnail clicks and arrow keys scroll that page into view.
+
+### Dirty state
+
+`dirty` is set on page/signature edits. Opening another file, closing the current file, or closing the window prompts when unsaved changes exist.
 
 ### Module responsibilities
 
 | File | Role |
 |------|------|
-| `src/state.js` | Central store, dispatch, pub/sub, undo/redo |
-| `src/main.js` | Boot, render loop, toast, error modal |
-| `src/renderer.js` | pdf.js wrapper — load sources, render pages to canvas |
+| `src/state.js` | Central store, dispatch, pub/sub, undo/redo, page ids, signature remapping |
+| `src/main.js` | Boot, render loop, toast, error modal, unsaved `beforeunload` |
+| `src/renderer.js` | pdf.js wrapper — load/clear sources, page fetch, blank-page helper |
 | `src/pdf-engine.js` | pdf-lib wrapper — open, save, saveAs, close, `buildOutputDoc` |
-| `src/toolbar.js` | Toolbar DOM, button wiring, zoom control |
+| `src/toolbar.js` | Toolbar DOM, button wiring, zoom, add/insert/delete/rotate |
 | `src/sidebar.js` | Thumbnail list, drag-to-reorder, click selection, context menu |
-| `src/preview.js` | Main canvas, signature overlay layer, drag/resize interactions |
+| `src/preview.js` | Continuous-scroll page stack, lazy canvas render, signature overlays |
 | `src/signature.js` | Signature modal (draw/upload), placement mode, library popover |
 | `src/store.js` | Signature library persistence (electron-store) |
 | `src/shortcuts.js` | Global keyboard shortcuts |
 
 ### Keyboard shortcuts (implemented in `src/shortcuts.js`)
 
-`Ctrl/Cmd+O` open, `Ctrl/Cmd+S` save, `Ctrl/Cmd+Shift+S` save as, `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` redo, `[` rotate left, `]` rotate right, `Ctrl/Cmd+A` select all, `Delete/Backspace` delete selected pages or signature, `Escape` cancel placement / deselect.
+`Ctrl/Cmd+O` open, `Ctrl/Cmd+S` save, `Ctrl/Cmd+Shift+S` save as, `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` redo, `[` rotate left, `]` rotate right, `Ctrl/Cmd+A` select all, `Delete/Backspace` delete selected pages or signature, `ArrowUp` / `ArrowDown` previous/next page, `PageUp` / `PageDown` scroll the preview by about one viewport, `Escape` cancel placement / deselect.
 
 ### Build output
 
