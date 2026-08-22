@@ -79,16 +79,19 @@ function hideErrorModal() {
 
 let isDrawing = false
 
-function initDrawCanvas() {
-  const canvas = document.getElementById('draw-canvas')
-  const ctx = canvas.getContext('2d')
-  // Initialize white background.
-  ctx.fillStyle = '#FFFFFF'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+function getDrawCtx(canvas) {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
   ctx.strokeStyle = '#111111'
   ctx.lineWidth = 2
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
+  return ctx
+}
+
+function initDrawCanvas() {
+  const canvas = document.getElementById('draw-canvas')
+  const ctx = getDrawCtx(canvas)
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
 
   function pointerPos(e) {
     const rect = canvas.getBoundingClientRect()
@@ -120,24 +123,17 @@ function initDrawCanvas() {
 
 function clearDrawCanvas() {
   const canvas = document.getElementById('draw-canvas')
-  const ctx = canvas.getContext('2d')
+  const ctx = getDrawCtx(canvas)
   ctx.clearRect(0, 0, canvas.width, canvas.height)
-  ctx.fillStyle = '#FFFFFF'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-  ctx.strokeStyle = '#111111'
-  ctx.lineWidth = 2
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
   const err = document.getElementById('draw-error')
   err.hidden = true
 }
 
 function drawCanvasIsBlank(canvas) {
-  const ctx = canvas.getContext('2d')
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
   const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
-  // Scan with stride for performance.
-  for (let i = 0; i < data.length; i += 4 * 8) {
-    if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) return false
+  for (let i = 3; i < data.length; i += 4 * 8) {
+    if (data[i] > 0) return false
   }
   return true
 }
@@ -231,33 +227,87 @@ async function nextSigName() {
   return 'Signature ' + (lib.length + 1)
 }
 
-async function toEmbeddableDataUrl(dataUrl) {
-  if (
-    dataUrl.startsWith('data:image/png') ||
-    dataUrl.startsWith('data:image/jpeg') ||
-    dataUrl.startsWith('data:image/jpg')
-  ) {
-    return dataUrl
+function knockOutPaper(imageData) {
+  const d = imageData.data
+  for (let i = 0; i < d.length; i += 4) {
+    const a = d[i + 3]
+    if (a === 0) continue
+    const r = d[i]
+    const g = d[i + 1]
+    const b = d[i + 2]
+    const minc = Math.min(r, g, b)
+    const maxc = Math.max(r, g, b)
+    const nearlyGray = maxc - minc < 40
+    if (minc >= 248 && nearlyGray) {
+      d[i + 3] = 0
+      continue
+    }
+    if (minc >= 200 && nearlyGray) {
+      d[i + 3] = Math.round(a * ((248 - minc) / 48))
+    }
   }
+}
+
+function opaqueBounds(imageData) {
+  const { width, height, data } = imageData
+  let minX = width
+  let minY = height
+  let maxX = -1
+  let maxY = -1
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (data[(y * width + x) * 4 + 3] > 8) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+  if (maxX < minX) return null
+  const pad = 2
+  const x = Math.max(0, minX - pad)
+  const y = Math.max(0, minY - pad)
+  return {
+    x,
+    y,
+    w: Math.min(width, maxX + 1 + pad) - x,
+    h: Math.min(height, maxY + 1 + pad) - y,
+  }
+}
+
+async function toTransparentPng(dataUrl) {
   const img = new Image()
   img.src = dataUrl
   await img.decode()
-  const canvas = document.createElement('canvas')
-  canvas.width = img.naturalWidth || 1
-  canvas.height = img.naturalHeight || 1
-  canvas.getContext('2d').drawImage(img, 0, 0)
-  return canvas.toDataURL('image/png')
+  const src = document.createElement('canvas')
+  src.width = img.naturalWidth || 1
+  src.height = img.naturalHeight || 1
+  const ctx = src.getContext('2d', { willReadFrequently: true })
+  ctx.drawImage(img, 0, 0)
+  const imageData = ctx.getImageData(0, 0, src.width, src.height)
+  knockOutPaper(imageData)
+  ctx.putImageData(imageData, 0, 0)
+  const box = opaqueBounds(imageData)
+  if (!box || (box.x === 0 && box.y === 0 && box.w === src.width && box.h === src.height)) {
+    return src.toDataURL('image/png')
+  }
+  const out = document.createElement('canvas')
+  out.width = box.w
+  out.height = box.h
+  out.getContext('2d').drawImage(src, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h)
+  return out.toDataURL('image/png')
 }
 
 async function onSignatureConfirmed(dataUrl) {
-  const embeddable = await toEmbeddableDataUrl(dataUrl)
+  const transparent = await toTransparentPng(dataUrl)
   const name = await nextSigName()
-  await addToLibrary({ id: nanoid(), name, dataUrl: embeddable, createdAt: Date.now() })
+  await addToLibrary({ id: nanoid(), name, dataUrl: transparent, createdAt: Date.now() })
   hideSignatureModal()
-  enterPlacementMode(embeddable)
+  enterPlacementMode(transparent)
 }
 
-export function enterPlacementMode(dataUrl) {
+function startPlacement(dataUrl) {
   dispatch({ type: 'SET_PLACEMENT_SIG', dataUrl })
   const pane = document.getElementById('preview-pane')
   pane.style.cursor = 'crosshair'
@@ -278,6 +328,15 @@ export function enterPlacementMode(dataUrl) {
     ghost.style.width = widthPx + 'px'
     ghost.style.height = heightPx + 'px'
   }
+}
+
+export function enterPlacementMode(dataUrl) {
+  toTransparentPng(dataUrl)
+    .then((transparent) => startPlacement(transparent))
+    .catch((err) => {
+      console.error(err)
+      startPlacement(dataUrl)
+    })
 }
 
 export function exitPlacementMode() {
