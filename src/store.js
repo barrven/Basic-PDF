@@ -8,3 +8,10 @@ export async function addToLibrary(sig) {
   if (lib.length > 20) lib = lib.slice(lib.length - 20)
   await window.electronAPI.setStoreValue('signatureLibrary', lib)
 }
+
+export async function removeFromLibrary(id) {
+  const lib = await getLibrary()
+  const next = lib.filter((s) => s.id !== id)
+  await window.electronAPI.setStoreValue('signatureLibrary', next)
+  return next
+}

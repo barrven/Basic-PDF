@@ -1,5 +1,5 @@
 import { appState, dispatch } from './state.js'
-import { getLibrary, addToLibrary } from './store.js'
+import { getLibrary, addToLibrary, removeFromLibrary } from './store.js'
 
 function nanoid() {
   return crypto.randomUUID().replace(/-/g, '').slice(0, 12)
@@ -453,8 +453,12 @@ async function renderSigPopover() {
   // Newest first.
   for (let i = lib.length - 1; i >= 0; i--) {
     const sig = lib[i]
+    const row = document.createElement('div')
+    row.className = 'sig-library-row'
+
     const btn = document.createElement('button')
     btn.className = 'sig-library-item'
+    btn.type = 'button'
     const img = document.createElement('img')
     img.src = sig.dataUrl
     btn.appendChild(img)
@@ -465,6 +469,21 @@ async function renderSigPopover() {
       closeSigPopover()
       enterPlacementMode(sig.dataUrl)
     })
-    pop.appendChild(btn)
+
+    const del = document.createElement('button')
+    del.className = 'sig-library-delete'
+    del.type = 'button'
+    del.title = 'Delete saved signature'
+    del.setAttribute('aria-label', 'Delete ' + (sig.name || 'signature'))
+    del.textContent = '×'
+    del.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      await removeFromLibrary(sig.id)
+      await renderSigPopover()
+    })
+
+    row.appendChild(btn)
+    row.appendChild(del)
+    pop.appendChild(row)
   }
 }

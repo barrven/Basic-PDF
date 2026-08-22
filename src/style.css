@@ -658,6 +658,12 @@ button:disabled {
   display: none;
 }
 
+.sig-library-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .sig-library-item {
   display: flex;
   align-items: center;
@@ -666,13 +672,32 @@ button:disabled {
   background: transparent;
   border: none;
   border-radius: 4px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   color: var(--text-primary);
 }
 
 .sig-library-item:hover {
   background: rgba(255, 255, 255, 0.06);
+}
+
+.sig-library-delete {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.sig-library-delete:hover {
+  color: var(--error);
+  background: rgba(224, 82, 82, 0.14);
 }
 
 .sig-library-item img {
@@ -687,6 +712,9 @@ button:disabled {
 
 .sig-library-item span {
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ─────────── Toast ─────────── */
