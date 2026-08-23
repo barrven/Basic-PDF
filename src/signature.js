@@ -340,6 +340,7 @@ function startPlacement(dataUrl) {
     ghost.style.width = widthPx + 'px'
     ghost.style.height = heightPx + 'px'
   }
+  pane.classList.add('is-placing')
 }
 
 export function enterPlacementMode(dataUrl) {
@@ -359,6 +360,7 @@ export function exitPlacementMode() {
   dispatch({ type: 'SET_PLACEMENT_SIG', dataUrl: null })
   const pane = document.getElementById('preview-pane')
   pane.style.cursor = 'default'
+  pane.classList.remove('is-placing')
   const ghost = document.getElementById('placement-ghost')
   ghost.hidden = true
   ghost.innerHTML = ''

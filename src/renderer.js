@@ -6,13 +6,35 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).href
 
+const CMAP_URL = new URL('../node_modules/pdfjs-dist/cmaps/', import.meta.url).href
+const STANDARD_FONT_DATA_URL = new URL(
+  '../node_modules/pdfjs-dist/standard_fonts/',
+  import.meta.url
+).href
+
 const pdfDocs = new Map() // sourceId -> pdf.js PDFDocumentProxy
+const textContentCache = new Map() // `${sourceId}:${originalIndex}` -> Promise<TextContent>
 let primaryBytes = null
+
+function textContentKey(sourceId, originalIndex) {
+  return sourceId + ':' + originalIndex
+}
+
+function clearTextContentCache() {
+  textContentCache.clear()
+}
 
 async function loadPdfSource(sourceId, bytes) {
   // pdf.js consumes the buffer; clone so callers retain ownership.
   const copy = bytes.slice()
-  const loadingTask = pdfjsLib.getDocument({ data: copy })
+  const loadingTask = pdfjsLib.getDocument({
+    data: copy,
+    cMapUrl: CMAP_URL,
+    cMapPacked: true,
+    standardFontDataUrl: STANDARD_FONT_DATA_URL,
+    // Worker-side fetch of file:// CMaps/fonts is unreliable in Electron.
+    useWorkerFetch: false,
+  })
   const doc = await loadingTask.promise
   pdfDocs.set(sourceId, doc)
   return doc
@@ -20,6 +42,7 @@ async function loadPdfSource(sourceId, bytes) {
 
 export async function setPrimarySource(bytes) {
   pdfDocs.clear()
+  clearTextContentCache()
   primaryBytes = bytes
   return loadPdfSource(PRIMARY_SOURCE_ID, bytes)
 }
@@ -30,6 +53,7 @@ export async function addPdfSource(sourceId, bytes) {
 
 export function clearPdfSources() {
   pdfDocs.clear()
+  clearTextContentCache()
   primaryBytes = null
 }
 
@@ -46,6 +70,23 @@ export async function getPage(sourceId, originalIndex) {
   if (!doc) throw new Error(`No PDF loaded for source ${sourceId}`)
   // PDF.js is 1-indexed.
   return await doc.getPage(originalIndex + 1)
+}
+
+export async function getPageTextContent(sourceId, originalIndex) {
+  const key = textContentKey(sourceId, originalIndex)
+  const cached = textContentCache.get(key)
+  if (cached) return cached
+  const promise = (async () => {
+    const page = await getPage(sourceId, originalIndex)
+    return page.getTextContent()
+  })()
+  textContentCache.set(key, promise)
+  try {
+    return await promise
+  } catch (err) {
+    textContentCache.delete(key)
+    throw err
+  }
 }
 
 export function drawBlankPlaceholder(canvas, width, height) {

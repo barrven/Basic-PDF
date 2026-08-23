@@ -1,10 +1,11 @@
+import { TextLayer } from '../node_modules/pdfjs-dist/build/pdf.mjs'
 import { appState, dispatch } from './state.js'
-import { getPage, drawBlankPlaceholder, PAGE_SIZE_A4, visualPageSize } from './renderer.js'
+import { getPage, getPageTextContent, drawBlankPlaceholder, PAGE_SIZE_A4, visualPageSize } from './renderer.js'
 import { handlePlacementClick, handlePlacementMove, isPlacing, exitPlacementMode } from './signature.js'
 import { snapZoom } from './zoom.js'
 
 let lastRenderToken = 0
-let pageViews = [] // { index, el, canvas, overlay, scale, pdfWidth, pdfHeight, renderedToken }
+let pageViews = [] // { index, el, canvas, textLayerEl, textLayer, overlay, scale, pdfWidth, pdfHeight, renderedToken }
 let pageObserver = null
 let scrollFocusRaf = 0
 let ignoreScrollSync = false
@@ -12,10 +13,26 @@ let pendingScrollAnchor = null
 let wheelZoomAccum = 0
 let wheelZoomAccumTimer = 0
 const WHEEL_ZOOM_THRESHOLD = 80
+let textPointerDown = null
 
 export function initPreview() {
   const pane = document.getElementById('preview-pane')
   const pagesHost = document.getElementById('preview-pages')
+
+  pane.addEventListener('pointerdown', (e) => {
+    if (e.target.closest?.('.textLayer')) {
+      textPointerDown = { x: e.clientX, y: e.clientY }
+      e.target.closest('.textLayer').classList.add('selecting')
+    } else {
+      textPointerDown = null
+    }
+  })
+
+  document.addEventListener('pointerup', () => {
+    for (const view of pageViews) {
+      view.textLayerEl?.classList.remove('selecting')
+    }
+  })
 
   pane.addEventListener('click', (e) => {
     if (isPlacing()) {
@@ -23,6 +40,7 @@ export function initPreview() {
       return
     }
     if (e.target.closest('.sig-overlay')) return
+    if (clickFinishedTextDrag(e) || textSelectionIsNonCollapsed()) return
     if (appState.selectedSig) {
       dispatch({ type: 'SET_SELECTED_SIG', id: null })
     }
@@ -176,9 +194,19 @@ function clearPageViews() {
     pageObserver.disconnect()
     pageObserver = null
   }
+  for (const view of pageViews) {
+    try { view.textLayer?.cancel() } catch {}
+    view.textLayer = null
+  }
   pageViews = []
   const host = document.getElementById('preview-pages')
   if (host) host.innerHTML = ''
+}
+
+function syncPlacementPointerEvents() {
+  const pane = document.getElementById('preview-pane')
+  if (!pane) return
+  pane.classList.toggle('is-placing', isPlacing())
 }
 
 function ensureObserver() {
@@ -244,6 +272,10 @@ export async function renderPreview() {
     canvas.style.height = pxH + 'px'
     el.appendChild(canvas)
 
+    const textLayerEl = document.createElement('div')
+    textLayerEl.className = 'textLayer'
+    el.appendChild(textLayerEl)
+
     const overlay = document.createElement('div')
     overlay.className = 'signature-overlay-layer'
     el.appendChild(overlay)
@@ -253,6 +285,8 @@ export async function renderPreview() {
       index: i,
       el,
       canvas,
+      textLayerEl,
+      textLayer: null,
       overlay,
       scale,
       pdfWidth: size.width,
@@ -262,6 +296,7 @@ export async function renderPreview() {
     pageObserver.observe(el)
   }
 
+  syncPlacementPointerEvents()
   renderSignatureOverlays()
   const focused = pageViews[appState.focusedPage]
   if (focused) {
@@ -290,24 +325,27 @@ async function renderPageCanvas(index, token) {
   try {
     if (entry.originalIndex === -1) {
       drawBlankPlaceholder(view.canvas, view.canvas.width, view.canvas.height)
-    } else {
-      const page = await getPage(entry.sourceId, entry.originalIndex)
-      if (token !== lastRenderToken) return
-      const viewport = page.getViewport({ scale: view.scale, rotation: entry.rotation })
-      const offscreen = document.createElement('canvas')
-      offscreen.width = Math.floor(viewport.width)
-      offscreen.height = Math.floor(viewport.height)
-      const ctx = offscreen.getContext('2d')
-      await page.render({ canvasContext: ctx, viewport }).promise
-      if (token !== lastRenderToken) return
-      const dest = view.canvas.getContext('2d')
-      dest.clearRect(0, 0, view.canvas.width, view.canvas.height)
-      dest.drawImage(offscreen, 0, 0, view.canvas.width, view.canvas.height)
+      view.renderedToken = token
+      return
     }
+    const page = await getPage(entry.sourceId, entry.originalIndex)
+    if (token !== lastRenderToken) return
+    const viewport = page.getViewport({ scale: view.scale, rotation: entry.rotation })
+    const offscreen = document.createElement('canvas')
+    offscreen.width = Math.floor(viewport.width)
+    offscreen.height = Math.floor(viewport.height)
+    const ctx = offscreen.getContext('2d')
+    await page.render({ canvasContext: ctx, viewport }).promise
+    if (token !== lastRenderToken) return
+    const dest = view.canvas.getContext('2d')
+    dest.clearRect(0, 0, view.canvas.width, view.canvas.height)
+    dest.drawImage(offscreen, 0, 0, view.canvas.width, view.canvas.height)
     view.renderedToken = token
+    await renderPageTextLayer(view, viewport, token, entry)
   } catch (err) {
     if (token !== lastRenderToken) return
     if (err && err.name === 'RenderingCancelledException') return
+    if (err && err.name === 'AbortException') return
     console.error('preview render failed', err)
     const ctx = view.canvas.getContext('2d')
     ctx.fillStyle = '#2A2A2A'
@@ -319,6 +357,93 @@ async function renderPageCanvas(index, token) {
     ctx.fillText('Page could not be rendered', view.canvas.width / 2, view.canvas.height / 2)
     view.renderedToken = token
   }
+}
+
+function isTextLayerCancel(err) {
+  return err && (err.name === 'AbortException' || /cancelled/i.test(err.message || ''))
+}
+
+async function renderPageTextLayer(view, viewport, token, entry) {
+  const layerEl = view.textLayerEl
+  if (!layerEl) return
+  try { view.textLayer?.cancel() } catch {}
+  view.textLayer = null
+  layerEl.replaceChildren()
+  layerEl.style.setProperty('--scale-factor', String(viewport.scale))
+
+  let textContent
+  try {
+    textContent = await getPageTextContent(entry.sourceId, entry.originalIndex)
+  } catch (err) {
+    if (token !== lastRenderToken || isTextLayerCancel(err)) return
+    console.error('text content failed', err)
+    return
+  }
+  if (token !== lastRenderToken) return
+  if (!textContent?.items?.length) return
+
+  const layer = new TextLayer({
+    textContentSource: textContent,
+    container: layerEl,
+    viewport,
+  })
+  view.textLayer = layer
+  try {
+    await layer.render()
+  } catch (err) {
+    if (token !== lastRenderToken || isTextLayerCancel(err)) return
+    console.error('text layer render failed', err)
+    return
+  }
+  if (token !== lastRenderToken) {
+    try { layer.cancel() } catch {}
+    return
+  }
+  const end = document.createElement('div')
+  end.className = 'endOfContent'
+  layerEl.append(end)
+}
+
+function textLayerFromSelection() {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return null
+  const node = sel.anchorNode
+  if (!node) return null
+  const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement
+  return el?.closest('.textLayer') || null
+}
+
+export function textSelectionIsActive() {
+  return !!textLayerFromSelection()
+}
+
+export function textSelectionIsNonCollapsed() {
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed) return false
+  return textSelectionIsActive()
+}
+
+function clickFinishedTextDrag(e) {
+  const start = textPointerDown
+  textPointerDown = null
+  if (!start) return false
+  const dx = e.clientX - start.x
+  const dy = e.clientY - start.y
+  return (dx * dx + dy * dy) > 9
+}
+
+export function selectAllTextInActiveLayer() {
+  const sel = window.getSelection()
+  if (!sel) return false
+  const layer = textLayerFromSelection()
+  if (!layer || !layer.querySelector('span')) return false
+  const range = document.createRange()
+  range.selectNodeContents(layer)
+  const end = layer.querySelector('.endOfContent')
+  if (end) range.setEndBefore(end)
+  sel.removeAllRanges()
+  sel.addRange(range)
+  return true
 }
 
 export function renderSignatureOverlays() {

@@ -2,6 +2,7 @@ import { appState, dispatch } from './state.js'
 import { openFile, save, saveAs } from './pdf-engine.js'
 import { exitPlacementMode, isPlacing } from './signature.js'
 import { deleteSelectedPages, rotateSelected } from './toolbar.js'
+import { textSelectionIsActive, textSelectionIsNonCollapsed, selectAllTextInActiveLayer } from './preview.js'
 
 export function initShortcuts() {
   document.addEventListener('keydown', onKeyDown)
@@ -54,11 +55,13 @@ async function onKeyDown(e) {
   }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (modalIsOpen()) return
-    e.preventDefault()
     if (appState.selectedSig) {
+      e.preventDefault()
       dispatch({ type: 'DELETE_SIGNATURE', id: appState.selectedSig })
       return
     }
+    if (textSelectionIsNonCollapsed()) return
+    e.preventDefault()
     deleteSelectedPages()
     return
   }
@@ -108,6 +111,10 @@ async function onKeyDown(e) {
     return
   }
   if (mod && (e.key === 'a' || e.key === 'A')) {
+    if (textSelectionIsActive() && selectAllTextInActiveLayer()) {
+      e.preventDefault()
+      return
+    }
     if (appState.pages.length === 0) return
     e.preventDefault()
     const all = new Set()
