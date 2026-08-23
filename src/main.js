@@ -4,6 +4,7 @@ import { initSidebar, renderThumbnails, updateSelectionStyles, scrollFocusedInto
 import { initPreview, renderPreview, renderSignatureOverlays, scrollPreviewToFocused } from './preview.js'
 import { initSignature } from './signature.js'
 import { initShortcuts } from './shortcuts.js'
+import { initSearch, onSearchDocumentChanged } from './search.js'
 
 // ─────────── Toast ───────────
 
@@ -75,6 +76,7 @@ export function render() {
 
   if (pagesChanged || fileChanged) {
     renderThumbnails().catch((e) => console.error(e))
+    onSearchDocumentChanged()
   }
   if (pagesChanged || zoomChanged || fileChanged) {
     renderPreview().catch((e) => console.error(e))
@@ -122,6 +124,7 @@ function init() {
   initSidebar()
   initPreview()
   initSignature()
+  initSearch()
   initShortcuts()
 
   subscribe(render)

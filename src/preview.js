@@ -14,6 +14,8 @@ let wheelZoomAccum = 0
 let wheelZoomAccumTimer = 0
 const WHEEL_ZOOM_THRESHOLD = 80
 let textPointerDown = null
+const textLayerPaintListeners = new Set()
+let previewIdle = Promise.resolve()
 
 export function initPreview() {
   const pane = document.getElementById('preview-pane')
@@ -223,7 +225,64 @@ function ensureObserver() {
   }, { root: pane, rootMargin: '800px 0px' })
 }
 
+export function whenPreviewIdle() {
+  return previewIdle
+}
+
+export function addTextLayerPaintListener(fn) {
+  textLayerPaintListeners.add(fn)
+  return () => textLayerPaintListeners.delete(fn)
+}
+
+function markTextLayerPainted(view) {
+  if (!view) return
+  view.textLayerPainted = true
+  for (const fn of textLayerPaintListeners) {
+    try { fn(view.index) } catch (err) { console.error(err) }
+  }
+}
+
+export async function waitForTextLayer(pageIndex) {
+  const existing = pageViews[pageIndex]
+  if (existing?.textLayerPainted) return existing
+  return new Promise((resolve) => {
+    let settled = false
+    let timer = 0
+    const finish = (view) => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      remove()
+      resolve(view || null)
+    }
+    const remove = addTextLayerPaintListener((index) => {
+      if (index !== pageIndex) return
+      const view = pageViews[pageIndex]
+      if (view?.textLayerPainted) finish(view)
+    })
+    const view = pageViews[pageIndex]
+    if (view?.textLayerPainted) {
+      finish(view)
+      return
+    }
+    if (view) {
+      renderPageCanvas(pageIndex, lastRenderToken).catch((err) => console.error(err))
+    }
+    timer = setTimeout(() => finish(pageViews[pageIndex] || null), 10000)
+  })
+}
+
 export async function renderPreview() {
+  let releaseIdle
+  previewIdle = new Promise((resolve) => { releaseIdle = resolve })
+  try {
+    await renderPreviewInner()
+  } finally {
+    releaseIdle()
+  }
+}
+
+async function renderPreviewInner() {
   const pane = document.getElementById('preview-pane')
   const container = document.getElementById('preview-container')
   const host = document.getElementById('preview-pages')
@@ -287,6 +346,7 @@ export async function renderPreview() {
       canvas,
       textLayerEl,
       textLayer: null,
+      textLayerPainted: false,
       overlay,
       scale,
       pdfWidth: size.width,
@@ -326,6 +386,7 @@ async function renderPageCanvas(index, token) {
     if (entry.originalIndex === -1) {
       drawBlankPlaceholder(view.canvas, view.canvas.width, view.canvas.height)
       view.renderedToken = token
+      markTextLayerPainted(view)
       return
     }
     const page = await getPage(entry.sourceId, entry.originalIndex)
@@ -356,6 +417,7 @@ async function renderPageCanvas(index, token) {
     ctx.textBaseline = 'middle'
     ctx.fillText('Page could not be rendered', view.canvas.width / 2, view.canvas.height / 2)
     view.renderedToken = token
+    markTextLayerPainted(view)
   }
 }
 
@@ -365,43 +427,52 @@ function isTextLayerCancel(err) {
 
 async function renderPageTextLayer(view, viewport, token, entry) {
   const layerEl = view.textLayerEl
-  if (!layerEl) return
-  try { view.textLayer?.cancel() } catch {}
-  view.textLayer = null
-  layerEl.replaceChildren()
-  layerEl.style.setProperty('--scale-factor', String(viewport.scale))
-
-  let textContent
+  if (!layerEl) {
+    if (token === lastRenderToken) markTextLayerPainted(view)
+    return
+  }
   try {
-    textContent = await getPageTextContent(entry.sourceId, entry.originalIndex)
-  } catch (err) {
-    if (token !== lastRenderToken || isTextLayerCancel(err)) return
-    console.error('text content failed', err)
-    return
-  }
-  if (token !== lastRenderToken) return
-  if (!textContent?.items?.length) return
+    try { view.textLayer?.cancel() } catch {}
+    view.textLayer = null
+    layerEl.replaceChildren()
+    layerEl.style.setProperty('--scale-factor', String(viewport.scale))
 
-  const layer = new TextLayer({
-    textContentSource: textContent,
-    container: layerEl,
-    viewport,
-  })
-  view.textLayer = layer
-  try {
-    await layer.render()
-  } catch (err) {
-    if (token !== lastRenderToken || isTextLayerCancel(err)) return
-    console.error('text layer render failed', err)
-    return
+    let textContent
+    try {
+      textContent = await getPageTextContent(entry.sourceId, entry.originalIndex)
+    } catch (err) {
+      if (token !== lastRenderToken || isTextLayerCancel(err)) return
+      console.error('text content failed', err)
+      return
+    }
+    if (token !== lastRenderToken) return
+    if (!textContent?.items?.length) return
+
+    const layer = new TextLayer({
+      textContentSource: textContent,
+      container: layerEl,
+      viewport,
+    })
+    view.textLayer = layer
+    try {
+      await layer.render()
+    } catch (err) {
+      if (token !== lastRenderToken || isTextLayerCancel(err)) return
+      console.error('text layer render failed', err)
+      return
+    }
+    if (token !== lastRenderToken) {
+      try { layer.cancel() } catch {}
+      return
+    }
+    const end = document.createElement('div')
+    end.className = 'endOfContent'
+    layerEl.append(end)
+  } finally {
+    if (token === lastRenderToken && pageViews[view.index] === view) {
+      markTextLayerPainted(view)
+    }
   }
-  if (token !== lastRenderToken) {
-    try { layer.cancel() } catch {}
-    return
-  }
-  const end = document.createElement('div')
-  end.className = 'endOfContent'
-  layerEl.append(end)
 }
 
 function textLayerFromSelection() {
@@ -444,6 +515,152 @@ export function selectAllTextInActiveLayer() {
   sel.removeAllRanges()
   sel.addRange(range)
   return true
+}
+
+function spanSourceText(span) {
+  return span.dataset.findText ?? span.textContent ?? ''
+}
+
+function restoreFindSpan(span) {
+  if (span.dataset.findText == null) return
+  span.textContent = span.dataset.findText
+  delete span.dataset.findText
+}
+
+function segmentsFromHit(divs, hit) {
+  let remaining = hit.length
+  let offset = hit.offset
+  const segs = []
+  for (let i = hit.itemIndex; i < divs.length && remaining > 0; i++) {
+    const text = spanSourceText(divs[i])
+    const start = i === hit.itemIndex ? offset : 0
+    if (start > text.length) break
+    const take = Math.min(remaining, text.length - start)
+    if (take > 0) {
+      segs.push({ itemIndex: i, offset: start, length: take })
+      remaining -= take
+    }
+  }
+  return segs
+}
+
+function paintSpanHighlights(span, ranges) {
+  const original = spanSourceText(span)
+  span.dataset.findText = original
+  const ordered = ranges.slice().sort((a, b) => a.offset - b.offset)
+  span.textContent = ''
+  let cursor = 0
+  for (const r of ordered) {
+    const start = Math.max(0, Math.min(original.length, r.offset))
+    const end = Math.max(start, Math.min(original.length, r.offset + r.length))
+    if (start < cursor) continue
+    if (start > cursor) span.append(original.slice(cursor, start))
+    const mark = document.createElement('span')
+    mark.className = r.isCurrent ? 'find-match find-match-current' : 'find-match'
+    mark.dataset.findIdx = String(r.matchIndex)
+    mark.textContent = original.slice(start, end)
+    span.append(mark)
+    cursor = end
+  }
+  if (cursor < original.length) span.append(original.slice(cursor))
+}
+
+function paintViewHighlights(view, hits) {
+  const divs = view.textLayer?.textDivs
+  if (!divs || divs.length === 0) return
+  for (const span of divs) restoreFindSpan(span)
+  if (!hits.length) return
+  const rangesByDiv = new Map()
+  for (const hit of hits) {
+    for (const seg of segmentsFromHit(divs, hit)) {
+      let list = rangesByDiv.get(seg.itemIndex)
+      if (!list) {
+        list = []
+        rangesByDiv.set(seg.itemIndex, list)
+      }
+      list.push({
+        offset: seg.offset,
+        length: seg.length,
+        matchIndex: hit.matchIndex,
+        isCurrent: hit.isCurrent,
+      })
+    }
+  }
+  for (const [itemIndex, ranges] of rangesByDiv) {
+    const span = divs[itemIndex]
+    if (!span || !span.isConnected) continue
+    paintSpanHighlights(span, ranges)
+  }
+}
+
+export function applyFindHighlights(matches, currentIndex) {
+  const byPage = new Map()
+  for (let i = 0; i < matches.length; i++) {
+    const m = matches[i]
+    let list = byPage.get(m.pageIndex)
+    if (!list) {
+      list = []
+      byPage.set(m.pageIndex, list)
+    }
+    list.push({ ...m, matchIndex: i, isCurrent: i === currentIndex })
+  }
+  for (const view of pageViews) {
+    if (!view.textLayerPainted) continue
+    paintViewHighlights(view, byPage.get(view.index) || [])
+  }
+}
+
+export function applyFindHighlightsForPage(pageIndex, matches, currentIndex) {
+  const view = pageViews[pageIndex]
+  if (!view?.textLayerPainted) return
+  const hits = []
+  for (let i = 0; i < matches.length; i++) {
+    const m = matches[i]
+    if (m.pageIndex !== pageIndex) continue
+    hits.push({ ...m, matchIndex: i, isCurrent: i === currentIndex })
+  }
+  paintViewHighlights(view, hits)
+}
+
+export function setCurrentFindHighlight(currentIndex) {
+  for (const el of document.querySelectorAll('.textLayer .find-match-current')) {
+    el.classList.remove('find-match-current')
+  }
+  if (currentIndex < 0) return
+  for (const el of document.querySelectorAll(`.textLayer [data-find-idx="${currentIndex}"]`)) {
+    el.classList.add('find-match-current')
+  }
+}
+
+export function scrollCurrentFindMatchIntoView() {
+  const el = document.querySelector('.textLayer .find-match-current')
+  const pane = document.getElementById('preview-pane')
+  if (!el || !pane) return
+  const paneRect = pane.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+  const pad = 24
+  const fullyVisible = elRect.top >= paneRect.top + pad && elRect.bottom <= paneRect.bottom - pad
+  if (fullyVisible) return
+  const elCenter = elRect.top + elRect.height / 2
+  const paneCenter = paneRect.top + paneRect.height / 2
+  ignoreScrollSync = true
+  pane.scrollTo({
+    top: Math.max(0, pane.scrollTop + (elCenter - paneCenter)),
+    behavior: 'auto',
+  })
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
+  requestAnimationFrame(() => {
+    ignoreScrollSync = false
+  })
+}
+
+export function clearFindHighlights() {
+  for (const view of pageViews) {
+    const divs = view.textLayer?.textDivs
+    if (!divs) continue
+    for (const span of divs) restoreFindSpan(span)
+  }
 }
 
 export function renderSignatureOverlays() {

@@ -327,13 +327,93 @@ button:disabled {
 
 /* ─────────── Preview pane ─────────── */
 
+#preview-shell {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
 #preview-pane {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   scrollbar-gutter: stable;
   background: var(--bg);
   padding: 24px;
   position: relative;
+}
+
+#find-bar {
+  position: absolute;
+  top: 12px;
+  right: 20px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  -webkit-app-region: no-drag;
+}
+
+#find-bar[hidden] {
+  display: none;
+}
+
+#find-input {
+  width: 180px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-primary);
+  padding: 0 8px;
+  font: inherit;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+#find-input:focus {
+  border-color: var(--accent);
+}
+
+#find-status {
+  min-width: 72px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+#find-bar button {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+#find-bar button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#find-bar button:disabled {
+  opacity: 0.4;
+}
+
+#find-close {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-muted);
 }
 
 #preview-container {
@@ -446,6 +526,23 @@ button:disabled {
 
 .preview-page .textLayer.selecting .endOfContent {
   top: 0;
+}
+
+.preview-page .textLayer .find-match {
+  position: relative;
+  left: auto;
+  top: auto;
+  color: transparent;
+  white-space: inherit;
+  cursor: inherit;
+  transform: none;
+  background-color: rgba(255, 213, 0, 0.42);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.preview-page .textLayer .find-match-current {
+  background-color: rgba(255, 145, 0, 0.55);
 }
 
 #preview-pane.is-placing .textLayer {

@@ -3,6 +3,7 @@ import { openFile, save, saveAs } from './pdf-engine.js'
 import { exitPlacementMode, isPlacing } from './signature.js'
 import { deleteSelectedPages, rotateSelected } from './toolbar.js'
 import { textSelectionIsActive, textSelectionIsNonCollapsed, selectAllTextInActiveLayer } from './preview.js'
+import { openFindBar, closeFindBar, isFindBarOpen } from './search.js'
 
 export function initShortcuts() {
   document.addEventListener('keydown', onKeyDown)
@@ -25,8 +26,18 @@ function modalIsOpen() {
 }
 
 async function onKeyDown(e) {
-  if (isTypingTarget(e.target)) return
   const mod = e.metaKey || e.ctrlKey
+  if (mod && !e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+    e.preventDefault()
+    if (!modalIsOpen()) openFindBar()
+    return
+  }
+  if (e.key === 'Escape' && isFindBarOpen()) {
+    e.preventDefault()
+    closeFindBar()
+    return
+  }
+  if (isTypingTarget(e.target)) return
 
   if (mod && !e.shiftKey && (e.key === 'o' || e.key === 'O')) {
     e.preventDefault()

@@ -281,5 +281,15 @@ export function scrollFocusedIntoView() {
   const el = document.querySelector(
     `#thumbnail-list .thumbnail-item[data-index="${appState.focusedPage}"]`
   )
-  if (el) el.scrollIntoView({ block: 'nearest' })
+  const sidebar = document.getElementById('sidebar')
+  if (!el || !sidebar) return
+  const sRect = sidebar.getBoundingClientRect()
+  const eRect = el.getBoundingClientRect()
+  if (eRect.top >= sRect.top && eRect.bottom <= sRect.bottom) return
+  let delta = 0
+  if (eRect.top < sRect.top) delta = eRect.top - sRect.top
+  else if (eRect.bottom > sRect.bottom) delta = eRect.bottom - sRect.bottom
+  sidebar.scrollTop += delta
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
 }

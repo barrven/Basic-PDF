@@ -24,14 +24,23 @@
         <div id="thumbnail-list"></div>
       </div>
       <div id="resize-handle"></div>
-      <div id="preview-pane">
-        <div id="preview-container" hidden>
-          <div id="preview-pages"></div>
-          <div id="placement-ghost" hidden></div>
+      <div id="preview-shell">
+        <div id="find-bar" hidden>
+          <input id="find-input" type="search" placeholder="Find in document" autocomplete="off" spellcheck="false" aria-label="Find in document" />
+          <span id="find-status" aria-live="polite"></span>
+          <button type="button" id="find-prev" title="Previous match" aria-label="Previous match">↑</button>
+          <button type="button" id="find-next" title="Next match" aria-label="Next match">↓</button>
+          <button type="button" id="find-close" title="Close" aria-label="Close find">×</button>
         </div>
-        <div id="empty-state">
-          <h2>No PDF open</h2>
-          <p>Click "Open" in the toolbar or press Ctrl/Cmd+O to load a file.</p>
+        <div id="preview-pane">
+          <div id="preview-container" hidden>
+            <div id="preview-pages"></div>
+            <div id="placement-ghost" hidden></div>
+          </div>
+          <div id="empty-state">
+            <h2>No PDF open</h2>
+            <p>Click "Open" in the toolbar or press Ctrl/Cmd+O to load a file.</p>
+          </div>
         </div>
       </div>
     </div>
