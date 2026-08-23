@@ -67,4 +67,4 @@ See `CLAUDE.md` for a full module-by-module breakdown.
 
 ## License
 
-No license specified.
+MIT © 2024 barrven
