@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Desktop PDF editor (Electron)",
   "author": "barrven",
+  "license": "MIT",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
