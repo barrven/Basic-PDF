@@ -159,8 +159,8 @@ button:disabled {
 
 .sig-dropdown-arrow {
   -webkit-app-region: no-drag;
-  font-size: 11px;
-  width: 18px;
+  font-size: 20px;
+  width: 20px;
   height: 32px;
   display: inline-flex;
   align-items: center;

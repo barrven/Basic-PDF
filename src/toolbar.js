@@ -48,9 +48,9 @@ export function initToolbar() {
   bar.appendChild(makeButton('save', 'Save', 'save', { title: 'Save (Ctrl/Cmd+S)' }))
   bar.appendChild(makeButton('save-as', 'Save As', 'save-as', { title: 'Save As (Ctrl/Cmd+Shift+S)' }))
   bar.appendChild(makeSep())
-  bar.appendChild(makeButton('add-blank', 'Add page', 'add-blank'))
+  // bar.appendChild(makeButton('add-blank', 'Add page', 'add-blank')) // keep feature disabled for now until annotation features are added
   bar.appendChild(makeButton('insert-pdf', 'Insert PDF', 'insert-pdf'))
-  bar.appendChild(makeButton('delete-pages', 'Delete', 'delete-pages'))
+  bar.appendChild(makeButton('delete-pages', 'Delete page', 'delete-pages'))
   bar.appendChild(makeSep())
   bar.appendChild(makeButton('rotate', 'Rotate', 'rotate', { title: 'Rotate page right (])' }))
   bar.appendChild(makeSep())
