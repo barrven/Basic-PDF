@@ -1,0 +1,5 @@
+enable stored signature deletion
+enable signature drag corner to resize
+add markdown features: text entry, line drawing, highlighting
+add search feature with ctrl + f
+add zoom in out with ctrl + mouse scroll

@@ -1,8 +1,9 @@
 {
-  "name": "basicpdf",
+  "name": "basic-pdf",
+  "productName": "Basic PDF",
   "version": "1.0.0",
   "description": "Desktop PDF editor (Electron)",
-  "author": "basicpdf",
+  "author": "barrven",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",

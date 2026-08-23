@@ -1,5 +1,5 @@
-appId: com.example.basicpdf
-productName: BasicPDF
+appId: com.barrven.basic-pdf
+productName: Basic PDF
 directories:
   buildResources: build
 files:
@@ -12,6 +12,9 @@ files:
 win:
   target: nsis
   icon: icon.png
+nsis:
+  shortcutName: Basic PDF
+  uninstallDisplayName: Basic PDF
 mac:
   target: dmg
   icon: icon.png

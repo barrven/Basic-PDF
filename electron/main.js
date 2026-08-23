@@ -6,20 +6,24 @@ let store = null
 async function getStore() {
   if (store) return store
   const Store = (await import('electron-store')).default
-  store = new Store({ name: 'basicpdf' })
+  store = new Store({ name: 'basic-pdf' })
   migrateLegacyStore(store)
   return store
 }
 
-// One-time migration from the pre-rename store file (app was named "pdf-editor").
+// One-time migration from older store filenames.
 function migrateLegacyStore(newStore) {
   if (Object.keys(newStore.store).length > 0) return
-  const legacyPath = path.join(app.getPath('userData'), 'pdf-editor.json')
-  if (!fs.existsSync(legacyPath)) return
-  try {
-    const legacyData = JSON.parse(fs.readFileSync(legacyPath, 'utf-8'))
-    newStore.set(legacyData)
-  } catch {}
+  const userData = app.getPath('userData')
+  for (const filename of ['basicpdf.json', 'pdf-editor.json']) {
+    const legacyPath = path.join(userData, filename)
+    if (!fs.existsSync(legacyPath)) continue
+    try {
+      const legacyData = JSON.parse(fs.readFileSync(legacyPath, 'utf-8'))
+      newStore.set(legacyData)
+      return
+    } catch {}
+  }
 }
 
 function createWindow() {
@@ -30,6 +34,7 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: '#111111',
     icon: path.join(__dirname, '..', 'icon.png'),
+    title: 'Basic PDF',
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#1C1C1C',

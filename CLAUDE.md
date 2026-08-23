@@ -11,6 +11,12 @@ npm run build      # package with electron-builder → dist/
 
 There is no test suite and no linter configured.
 
+### App name
+
+The visible name is **Basic PDF** (`productName` in `package.json` and `.electron-builder.yml`). That is what the window, installer, and Start menu shortcut use.
+
+`package.json` `"name"` must stay a valid npm package id (`basic-pdf`: lowercase, no spaces). Putting `"Basic PDF"` there makes `electron-builder` fail. Do not change `"name"` to the display name.
+
 ## Architecture
 
 This is a vanilla-JS Electron desktop app with no bundler and no frontend framework. All browser-side code uses native ES modules loaded directly from `node_modules` paths.

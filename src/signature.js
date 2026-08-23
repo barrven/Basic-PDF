@@ -1,5 +1,6 @@
 import { appState, dispatch } from './state.js'
 import { getLibrary, addToLibrary, removeFromLibrary } from './store.js'
+import { showToast } from './main.js'
 
 function nanoid() {
   return crypto.randomUUID().replace(/-/g, '').slice(0, 12)
@@ -213,6 +214,9 @@ export function showSignatureModal() {
   uploadedDataUrl = null
   document.getElementById('upload-error').hidden = true
   document.querySelector('[data-action="confirm-upload"]').disabled = true
+  const confirmLabel = canPlaceSignature() ? 'Use signature' : 'Save signature'
+  document.querySelector('[data-action="confirm-draw"]').textContent = confirmLabel
+  document.querySelector('[data-action="confirm-upload"]').textContent = confirmLabel
   // Focus.
   const first = document.querySelector('#signature-modal .tab-btn[data-active="true"]')
   if (first) first.focus()
@@ -299,12 +303,20 @@ async function toTransparentPng(dataUrl) {
   return out.toDataURL('image/png')
 }
 
+function canPlaceSignature() {
+  return Boolean(appState.filePath && appState.pages.length > 0)
+}
+
 async function onSignatureConfirmed(dataUrl) {
   const transparent = await toTransparentPng(dataUrl)
   const name = await nextSigName()
   await addToLibrary({ id: nanoid(), name, dataUrl: transparent, createdAt: Date.now() })
   hideSignatureModal()
-  enterPlacementMode(transparent)
+  if (canPlaceSignature()) {
+    enterPlacementMode(transparent)
+  } else {
+    showToast('Saved to library')
+  }
 }
 
 function startPlacement(dataUrl) {
@@ -331,6 +343,10 @@ function startPlacement(dataUrl) {
 }
 
 export function enterPlacementMode(dataUrl) {
+  if (!canPlaceSignature()) {
+    showToast('Open a PDF to place a signature')
+    return
+  }
   toTransparentPng(dataUrl)
     .then((transparent) => startPlacement(transparent))
     .catch((err) => {
@@ -465,7 +481,14 @@ async function renderSigPopover() {
     const span = document.createElement('span')
     span.textContent = sig.name
     btn.appendChild(span)
+    if (!canPlaceSignature()) {
+      btn.title = 'Open a PDF to place this signature'
+    }
     btn.addEventListener('click', () => {
+      if (!canPlaceSignature()) {
+        showToast('Open a PDF to place a signature')
+        return
+      }
       closeSigPopover()
       enterPlacementMode(sig.dataUrl)
     })

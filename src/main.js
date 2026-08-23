@@ -51,7 +51,7 @@ function updateTitle() {
   const name = basename(appState.filePath)
   const fileEl = document.getElementById('filename')
   if (!appState.filePath) {
-    document.title = 'BasicPDF'
+    document.title = 'Basic PDF'
     if (fileEl) fileEl.textContent = ''
   } else if (appState.dirty) {
     document.title = '● ' + name

@@ -1,4 +1,4 @@
-# BasicPDF
+# Basic PDF
 
 A lightweight desktop PDF editor built with Electron — no bundler, no frontend framework, just vanilla JS and native ES modules.
 
@@ -29,7 +29,7 @@ npm start       # launch the app (alias: npm run dev)
 npm run build   # package with electron-builder → dist/
 ```
 
-Build targets are configured in `.electron-builder.yml`: NSIS (Windows), DMG (macOS), and AppImage (Linux).
+Build targets are configured in `.electron-builder.yml`: NSIS (Windows), DMG (macOS), and AppImage (Linux). The installed app and Start menu shortcut are named **Basic PDF**.
 
 ## Keyboard shortcuts
 

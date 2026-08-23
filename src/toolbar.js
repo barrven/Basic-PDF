@@ -265,8 +265,6 @@ export function updateToolbar() {
     'save-as': !fileOpen,
     'add-blank': !fileOpen,
     'insert-pdf': !fileOpen,
-    'add-signature': !fileOpen,
-    'sig-library': !fileOpen,
     'rotate': !fileOpen,
     'close-file': !fileOpen,
     'delete-pages':
