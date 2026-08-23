@@ -1,12 +1,17 @@
 import { appState, dispatch } from './state.js'
 import { getPage, drawBlankPlaceholder, PAGE_SIZE_A4, visualPageSize } from './renderer.js'
 import { handlePlacementClick, handlePlacementMove, isPlacing, exitPlacementMode } from './signature.js'
+import { snapZoom } from './zoom.js'
 
 let lastRenderToken = 0
 let pageViews = [] // { index, el, canvas, overlay, scale, pdfWidth, pdfHeight, renderedToken }
 let pageObserver = null
 let scrollFocusRaf = 0
 let ignoreScrollSync = false
+let pendingScrollAnchor = null
+let wheelZoomAccum = 0
+let wheelZoomAccumTimer = 0
+const WHEEL_ZOOM_THRESHOLD = 80
 
 export function initPreview() {
   const pane = document.getElementById('preview-pane')
@@ -51,6 +56,8 @@ export function initPreview() {
     })
   }, { passive: true })
 
+  pane.addEventListener('wheel', onPreviewWheel, { passive: false })
+
   window.addEventListener('resize', () => {
     if (appState.zoom === null && appState.filePath) {
       renderPreview()
@@ -60,6 +67,86 @@ export function initPreview() {
     if (appState.zoom === null && appState.filePath) {
       renderPreview()
     }
+  })
+}
+
+function modalIsOpen() {
+  const m = document.getElementById('modal-backdrop')
+  const e = document.getElementById('error-modal-backdrop')
+  return (m && !m.hidden) || (e && !e.hidden)
+}
+
+function onPreviewWheel(e) {
+  if (!e.ctrlKey && !e.metaKey) return
+  e.preventDefault()
+  if (!appState.filePath || appState.pages.length === 0) return
+  if (isPlacing() || modalIsOpen()) return
+
+  let dy = e.deltaY
+  if (e.deltaMode === 1) dy *= 16
+  else if (e.deltaMode === 2) dy *= 48
+
+  wheelZoomAccum += dy
+  if (wheelZoomAccumTimer) clearTimeout(wheelZoomAccumTimer)
+  wheelZoomAccumTimer = setTimeout(() => {
+    wheelZoomAccum = 0
+    wheelZoomAccumTimer = 0
+  }, 250)
+  if (Math.abs(wheelZoomAccum) < WHEEL_ZOOM_THRESHOLD) return
+
+  const direction = wheelZoomAccum > 0 ? 'out' : 'in'
+  wheelZoomAccum = 0
+
+  const view = pageViewFromEvent(e)
+  const currentScale = view?.scale ?? getCurrentScale()
+  const current = appState.zoom ?? Math.round(currentScale * 100)
+  const next = snapZoom(direction, current)
+  if (next === appState.zoom) return
+  if (appState.zoom == null && next === current) return
+
+  pendingScrollAnchor = captureZoomAnchor(e)
+  dispatch({ type: 'SET_ZOOM', zoom: next })
+}
+
+function captureZoomAnchor(e) {
+  const pane = document.getElementById('preview-pane')
+  const paneRect = pane.getBoundingClientRect()
+  const view = pageViewFromEvent(e)
+  if (view) {
+    const elRect = view.el.getBoundingClientRect()
+    return {
+      pageIndex: view.index,
+      pageYRatio: elRect.height > 0 ? (e.clientY - elRect.top) / elRect.height : 0,
+      pageXRatio: elRect.width > 0 ? (e.clientX - elRect.left) / elRect.width : 0.5,
+      cursorYInPane: e.clientY - paneRect.top,
+      cursorXInPane: e.clientX - paneRect.left,
+    }
+  }
+  return {
+    pageIndex: pageIndexAtViewport(),
+    pageYRatio: 0,
+    pageXRatio: 0.5,
+    cursorYInPane: Math.min(96, paneRect.height * 0.2),
+    cursorXInPane: paneRect.width / 2,
+  }
+}
+
+function restoreScrollAnchor(anchor) {
+  const view = pageViews[anchor.pageIndex]
+  const pane = document.getElementById('preview-pane')
+  if (!view || !pane) return
+  const paneRect = pane.getBoundingClientRect()
+  const elRect = view.el.getBoundingClientRect()
+  const pageTop = elRect.top - paneRect.top + pane.scrollTop
+  const pageLeft = elRect.left - paneRect.left + pane.scrollLeft
+  ignoreScrollSync = true
+  pane.scrollTo({
+    top: Math.max(0, pageTop + view.el.offsetHeight * anchor.pageYRatio - anchor.cursorYInPane),
+    left: Math.max(0, pageLeft + view.el.offsetWidth * anchor.pageXRatio - anchor.cursorXInPane),
+    behavior: 'auto',
+  })
+  requestAnimationFrame(() => {
+    ignoreScrollSync = false
   })
 }
 
@@ -116,6 +203,7 @@ export async function renderPreview() {
   const myToken = ++lastRenderToken
 
   if (!appState.filePath || appState.pages.length === 0) {
+    pendingScrollAnchor = null
     clearPageViews()
     if (container) container.hidden = true
     if (empty) empty.hidden = false
@@ -178,8 +266,17 @@ export async function renderPreview() {
   const focused = pageViews[appState.focusedPage]
   if (focused) {
     renderPageCanvas(appState.focusedPage, myToken).catch((err) => console.error(err))
-    requestAnimationFrame(() => scrollPreviewToFocused({ force: true }))
   }
+  requestAnimationFrame(() => {
+    if (myToken !== lastRenderToken) return
+    if (pendingScrollAnchor) {
+      const anchor = pendingScrollAnchor
+      pendingScrollAnchor = null
+      restoreScrollAnchor(anchor)
+      return
+    }
+    if (focused) scrollPreviewToFocused({ force: true })
+  })
 }
 
 async function renderPageCanvas(index, token) {

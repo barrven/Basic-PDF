@@ -3,6 +3,7 @@ import { openFile, save, saveAs, closeFile } from './pdf-engine.js'
 import { addPdfSource } from './renderer.js'
 import { showSignatureModal, toggleSigPopover } from './signature.js'
 import { showErrorModal } from './main.js'
+import { snapZoom, ZOOM_MIN, ZOOM_MAX } from './zoom.js'
 
 const ICONS = {
   open: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h4l2 2h6v7H2z"/></svg>`,
@@ -91,7 +92,7 @@ export function initToolbar() {
   const zoomOut = document.createElement('button')
   zoomOut.dataset.action = 'zoom-out'
   zoomOut.textContent = '−'
-  zoomOut.title = 'Zoom out'
+  zoomOut.title = 'Zoom out (Ctrl/Cmd+scroll)'
   const zoomLabel = document.createElement('button')
   zoomLabel.id = 'zoom-label'
   zoomLabel.dataset.action = 'zoom-reset'
@@ -100,7 +101,7 @@ export function initToolbar() {
   const zoomIn = document.createElement('button')
   zoomIn.dataset.action = 'zoom-in'
   zoomIn.textContent = '+'
-  zoomIn.title = 'Zoom in'
+  zoomIn.title = 'Zoom in (Ctrl/Cmd+scroll)'
   zoomGroup.appendChild(zoomOut)
   zoomGroup.appendChild(zoomLabel)
   zoomGroup.appendChild(zoomIn)
@@ -113,17 +114,8 @@ export function initToolbar() {
   updateToolbar()
 }
 
-const ZOOM_STEPS = [50, 67, 75, 90, 100, 125, 150, 175, 200]
-
-function snapZoom(direction) {
-  const current = appState.zoom ?? 100
-  if (direction === 'in') {
-    const next = ZOOM_STEPS.find((z) => z > current)
-    return next ?? 200
-  } else {
-    const next = [...ZOOM_STEPS].reverse().find((z) => z < current)
-    return next ?? 50
-  }
+function stepZoom(direction) {
+  return snapZoom(direction, appState.zoom ?? 100)
 }
 
 async function onToolbarClick(e) {
@@ -172,10 +164,10 @@ async function onToolbarClick(e) {
       toggleSigPopover(target)
       break
     case 'zoom-out':
-      dispatch({ type: 'SET_ZOOM', zoom: snapZoom('out') })
+      dispatch({ type: 'SET_ZOOM', zoom: stepZoom('out') })
       break
     case 'zoom-in':
-      dispatch({ type: 'SET_ZOOM', zoom: snapZoom('in') })
+      dispatch({ type: 'SET_ZOOM', zoom: stepZoom('in') })
       break
     case 'zoom-reset':
       dispatch({ type: 'SET_ZOOM', zoom: null })
@@ -278,8 +270,8 @@ export function updateToolbar() {
   const currentZoom = appState.zoom ?? 100
   const zoomOutBtn = document.querySelector('#toolbar [data-action="zoom-out"]')
   const zoomInBtn = document.querySelector('#toolbar [data-action="zoom-in"]')
-  if (zoomOutBtn) zoomOutBtn.disabled = !fileOpen || currentZoom <= 50
-  if (zoomInBtn) zoomInBtn.disabled = !fileOpen || currentZoom >= 200
+  if (zoomOutBtn) zoomOutBtn.disabled = !fileOpen || currentZoom <= ZOOM_MIN
+  if (zoomInBtn) zoomInBtn.disabled = !fileOpen || currentZoom >= ZOOM_MAX
   const zoomLabelBtn = document.getElementById('zoom-label')
   if (zoomLabelBtn) zoomLabelBtn.disabled = !fileOpen
 }

@@ -1,5 +1,4 @@
-enable stored signature deletion
 enable signature drag corner to resize
 add markdown features: text entry, line drawing, highlighting
 add search feature with ctrl + f
-add zoom in out with ctrl + mouse scroll
+add the ability to switch between light and dark display modes. default should follow whatever the OS has set.

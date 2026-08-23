@@ -6,6 +6,7 @@ A lightweight desktop PDF editor built with Electron — no bundler, no frontend
 
 - Open, edit, save, and close PDF files
 - Continuous-scroll preview of all pages (fit-to-width or stepped zoom)
+- Zoom the preview with the toolbar or Ctrl/Cmd+mouse wheel (around the cursor)
 - Reorder pages by dragging thumbnails
 - Rotate, insert, duplicate, and delete pages
 - Insert blank pages or pages from other PDFs
@@ -45,6 +46,7 @@ Build targets are configured in `.electron-builder.yml`: NSIS (Windows), DMG (ma
 | `Delete` / `Backspace` | Delete selected pages or signature |
 | `ArrowUp` / `ArrowDown` | Previous / next page |
 | `PageUp` / `PageDown` | Scroll the preview by about one viewport |
+| `Ctrl/Cmd+mouse wheel` | Zoom the preview in / out |
 | `Escape` | Cancel placement / deselect |
 
 Right-click a thumbnail for delete, rotate, duplicate, and insert blank page.

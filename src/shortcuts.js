@@ -5,6 +5,10 @@ import { deleteSelectedPages, rotateSelected } from './toolbar.js'
 
 export function initShortcuts() {
   document.addEventListener('keydown', onKeyDown)
+  // Stop Chromium from zooming the whole window; preview handles Ctrl/Cmd+wheel itself.
+  document.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.metaKey) e.preventDefault()
+  }, { passive: false })
 }
 
 function isTypingTarget(el) {

@@ -48,6 +48,8 @@ function createWindow() {
     },
   })
 
+  // Keep Ctrl/Cmd+wheel for the preview zoom handler; do not zoom the whole UI.
+  win.webContents.setVisualZoomLevelLimits(1, 1)
   win.loadFile(path.join(__dirname, '..', 'index.html'))
 }
 

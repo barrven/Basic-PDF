@@ -47,7 +47,9 @@ This is a vanilla-JS Electron desktop app with no bundler and no frontend framew
 
 ### Preview
 
-The preview pane (`#preview-pane`) is a continuous vertical stack of `.preview-page` nodes (canvas + per-page signature overlay), not a single-page canvas. Pages are measured, laid out, then rasterized lazily with `IntersectionObserver` (`src/preview.js`). Fit-to-width scales each page to the pane width; numeric zoom uses a shared `%` scale. Scrolling updates `focusedPage` (and single-page selection) from whichever page sits near the top of the viewport. Thumbnail clicks and arrow keys scroll that page into view.
+The preview pane (`#preview-pane`) is a continuous vertical stack of `.preview-page` nodes (canvas + per-page signature overlay), not a single-page canvas. Pages are measured, laid out, then rasterized lazily with `IntersectionObserver` (`src/preview.js`). Fit-to-width (`zoom === null`) scales each page to the pane width; numeric zoom uses a shared `%` scale from `src/zoom.js` (steps 50–200). Scrolling updates `focusedPage` (and single-page selection) from whichever page sits near the top of the viewport. Thumbnail clicks and arrow keys scroll that page into view.
+
+`Ctrl/Cmd+mouse wheel` over the preview steps zoom in/out using the same list as the toolbar buttons. After the stack rebuilds, a scroll anchor keeps the point under the cursor in place. Wheel zoom is ignored during signature placement and while a modal is open. Chromium visual zoom is locked at 100% (`webContents.setVisualZoomLevelLimits(1, 1)` in `electron/main.js`) and Ctrl/Cmd+wheel is `preventDefault`ed in `src/shortcuts.js`, so the shortcut never scales the whole UI.
 
 ### Dirty state
 
@@ -62,15 +64,23 @@ The preview pane (`#preview-pane`) is a continuous vertical stack of `.preview-p
 | `src/renderer.js` | pdf.js wrapper — load/clear sources, page fetch, blank-page helper |
 | `src/pdf-engine.js` | pdf-lib wrapper — open, save, saveAs, close, `buildOutputDoc` |
 | `src/toolbar.js` | Toolbar DOM, button wiring, zoom, add/insert/delete/rotate |
+| `src/zoom.js` | Shared zoom step list (50–200%) and `snapZoom()` used by toolbar and wheel zoom |
 | `src/sidebar.js` | Thumbnail list, drag-to-reorder, click selection, context menu |
-| `src/preview.js` | Continuous-scroll page stack, lazy canvas render, signature overlays |
+| `src/preview.js` | Continuous-scroll page stack, lazy canvas render, signature overlays, Ctrl/Cmd+wheel zoom |
 | `src/signature.js` | Signature modal (draw/upload), placement mode, library popover |
 | `src/store.js` | Signature library persistence (electron-store) |
 | `src/shortcuts.js` | Global keyboard shortcuts |
 
-### Keyboard shortcuts (implemented in `src/shortcuts.js`)
+### Keyboard shortcuts (implemented in `src/shortcuts.js`; Ctrl/Cmd+wheel zoom is in `src/preview.js`)
 
-`Ctrl/Cmd+O` open, `Ctrl/Cmd+S` save, `Ctrl/Cmd+Shift+S` save as, `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` redo, `[` rotate left, `]` rotate right, `Ctrl/Cmd+A` select all, `Delete/Backspace` delete selected pages or signature, `ArrowUp` / `ArrowDown` previous/next page, `PageUp` / `PageDown` scroll the preview by about one viewport, `Escape` cancel placement / deselect.
+`Ctrl/Cmd+O` open, `Ctrl/Cmd+S` save, `Ctrl/Cmd+Shift+S` save as, `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Shift+Z` / `Ctrl/Cmd+Y` redo, `[` rotate left, `]` rotate right, `Ctrl/Cmd+A` select all, `Delete/Backspace` delete selected pages or signature, `ArrowUp` / `ArrowDown` previous/next page, `PageUp` / `PageDown` scroll the preview by about one viewport, `Ctrl/Cmd+mouse wheel` zoom the preview in / out, `Escape` cancel placement / deselect.
+
+### Planned features
+
+Design notes (not implemented):
+
+- `feature-select-text.md` — select-and-copy via a pdf.js text layer over each preview canvas
+- `feature-search-text.md` — Ctrl/Cmd+F find-in-page on that same text layer
 
 ### Build output
 
