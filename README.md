@@ -5,6 +5,7 @@ A lightweight desktop PDF editor built with Electron — no bundler, no frontend
 ## Features
 
 - Open, edit, save, and close PDF files
+- Open a PDF by double-clicking it when Basic PDF is the default reader (each launch is its own window)
 - Continuous-scroll preview of all pages (fit-to-width or stepped zoom)
 - Zoom the preview with the toolbar or Ctrl/Cmd+mouse wheel (around the cursor)
 - Reorder pages by dragging thumbnails
@@ -30,7 +31,7 @@ npm start       # launch the app (alias: npm run dev)
 npm run build   # package with electron-builder → dist/
 ```
 
-Build targets are configured in `.electron-builder.yml`: NSIS (Windows), DMG (macOS), and AppImage (Linux). The installed app and Start menu shortcut are named **Basic PDF**.
+Build targets and the `.pdf` file association are configured in `.electron-builder.yml`: NSIS (Windows), DMG (macOS), and AppImage (Linux). The installed app and Start menu shortcut are named **Basic PDF**. `npm run build` passes `--config .electron-builder.yml` so that file is used instead of the empty `"build"` field in `package.json`.
 
 ## Keyboard shortcuts
 
@@ -55,7 +56,7 @@ Right-click a thumbnail for delete, rotate, duplicate, and insert blank page.
 
 The app is split across Electron's process boundary:
 
-- **Main process** (`electron/main.js`) owns native OS access — file dialogs, filesystem I/O, context menus, and persistent settings (via `electron-store`) — exposed through a small set of IPC handlers.
+- **Main process** (`electron/main.js`) owns native OS access — file dialogs, filesystem I/O, context menus, persistent settings (via `electron-store`), and the PDF path the OS passes when the app is launched as the default reader — exposed through a small set of IPC handlers plus an `open-path` event. Multiple instances are allowed.
 - **Preload** (`electron/preload.js`) bridges those handlers into `window.electronAPI` via `contextBridge`, so the renderer never touches Node directly.
 - **Renderer** (`src/`) uses two PDF libraries with distinct roles:
   - [pdf.js](https://mozilla.github.io/pdf.js/) renders pages to `<canvas>` for on-screen display.

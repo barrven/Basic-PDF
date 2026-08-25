@@ -1,5 +1,6 @@
 import { appState, dispatch, createPageEntry, normalizeRotation } from './state.js'
 import { openFile, save, saveAs, closeFile } from './pdf-engine.js'
+import { withDocumentLoading } from './main.js'
 import { addPdfSource } from './renderer.js'
 import { showSignatureModal, toggleSigPopover } from './signature.js'
 import { showErrorModal } from './main.js'
@@ -176,52 +177,57 @@ async function onToolbarClick(e) {
 }
 
 async function insertPdfFile() {
+  if (appState.loading) return
   const result = await window.electronAPI.openFile()
   if (!result) return
   try {
-    const { PDFDocument } = await import('../node_modules/pdf-lib/dist/pdf-lib.esm.js')
-
-    // Validate the file is a real PDF and get its page count.
-    const insertedDoc = await PDFDocument.load(result.buffer, { ignoreEncryption: true })
-    const insertCount = insertedDoc.getPageCount()
-    if (insertCount === 0) return
-
-    // Keep the inserted PDF as its own source. buildOutputDoc() already merges
-    // across sources at save time, so we avoid re-encoding the primary bytes
-    // on every insert.
-    const sourceId = `inserted-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    await addPdfSource(sourceId, result.buffer)
-
-    const insertAt = appState.focusedPage + 1
-    const insertedEntries = Array.from({ length: insertCount }, (_, i) => {
-      const angle = insertedDoc.getPage(i).getRotation().angle
-      return createPageEntry({
-        sourceId,
-        originalIndex: i,
-        rotation: normalizeRotation(angle),
-      })
-    })
-    const newPages = [
-      ...appState.pages.slice(0, insertAt),
-      ...insertedEntries,
-      ...appState.pages.slice(insertAt),
-    ]
-
-    // One atomic dispatch — a single render with the final pages/focusedPage,
-    // so the preview can't race against an intermediate state.
-    dispatch({
-      type: 'INSERT_PAGES',
-      sourceId,
-      sourceBytes: result.buffer,
-      pages: newPages,
-      focusedPage: insertAt,
-      shiftFromIndex: insertAt,
-      shiftDelta: insertCount,
-    })
+    await withDocumentLoading(() => insertPdfFromOpenResult(result))
   } catch (err) {
     console.error(err)
     showErrorModal('Could not insert this PDF. It may be corrupt or not a valid PDF.')
   }
+}
+
+async function insertPdfFromOpenResult(result) {
+  const { PDFDocument } = await import('../node_modules/pdf-lib/dist/pdf-lib.esm.js')
+
+  // Validate the file is a real PDF and get its page count.
+  const insertedDoc = await PDFDocument.load(result.buffer, { ignoreEncryption: true })
+  const insertCount = insertedDoc.getPageCount()
+  if (insertCount === 0) return
+
+  // Keep the inserted PDF as its own source. buildOutputDoc() already merges
+  // across sources at save time, so we avoid re-encoding the primary bytes
+  // on every insert.
+  const sourceId = `inserted-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  await addPdfSource(sourceId, result.buffer)
+
+  const insertAt = appState.focusedPage + 1
+  const insertedEntries = Array.from({ length: insertCount }, (_, i) => {
+    const angle = insertedDoc.getPage(i).getRotation().angle
+    return createPageEntry({
+      sourceId,
+      originalIndex: i,
+      rotation: normalizeRotation(angle),
+    })
+  })
+  const newPages = [
+    ...appState.pages.slice(0, insertAt),
+    ...insertedEntries,
+    ...appState.pages.slice(insertAt),
+  ]
+
+  // One atomic dispatch — a single render with the final pages/focusedPage,
+  // so the preview can't race against an intermediate state.
+  dispatch({
+    type: 'INSERT_PAGES',
+    sourceId,
+    sourceBytes: result.buffer,
+    pages: newPages,
+    focusedPage: insertAt,
+    shiftFromIndex: insertAt,
+    shiftDelta: insertCount,
+  })
 }
 
 function targetPageIndices() {
@@ -252,15 +258,20 @@ export function rotateSelected(delta) {
 
 export function updateToolbar() {
   const fileOpen = appState.filePath !== null
+  const busy = appState.loading
   const map = {
-    save: !fileOpen,
-    'save-as': !fileOpen,
-    'add-blank': !fileOpen,
-    'insert-pdf': !fileOpen,
-    'rotate': !fileOpen,
-    'close-file': !fileOpen,
+    open: busy,
+    save: !fileOpen || busy,
+    'save-as': !fileOpen || busy,
+    'add-blank': !fileOpen || busy,
+    'insert-pdf': !fileOpen || busy,
+    'rotate': !fileOpen || busy,
+    'close-file': !fileOpen || busy,
+    'add-signature': busy,
+    'sig-library': busy,
     'delete-pages':
       !fileOpen ||
+      busy ||
       appState.pages.length <= 1,
   }
   for (const [action, disabled] of Object.entries(map)) {
@@ -270,10 +281,10 @@ export function updateToolbar() {
   const currentZoom = appState.zoom ?? 100
   const zoomOutBtn = document.querySelector('#toolbar [data-action="zoom-out"]')
   const zoomInBtn = document.querySelector('#toolbar [data-action="zoom-in"]')
-  if (zoomOutBtn) zoomOutBtn.disabled = !fileOpen || currentZoom <= ZOOM_MIN
-  if (zoomInBtn) zoomInBtn.disabled = !fileOpen || currentZoom >= ZOOM_MAX
+  if (zoomOutBtn) zoomOutBtn.disabled = !fileOpen || busy || currentZoom <= ZOOM_MIN
+  if (zoomInBtn) zoomInBtn.disabled = !fileOpen || busy || currentZoom >= ZOOM_MAX
   const zoomLabelBtn = document.getElementById('zoom-label')
-  if (zoomLabelBtn) zoomLabelBtn.disabled = !fileOpen
+  if (zoomLabelBtn) zoomLabelBtn.disabled = !fileOpen || busy
 }
 
 export function updatePageCounter() {

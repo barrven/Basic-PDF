@@ -1,7 +1,7 @@
 import { PDFDocument, degrees } from '../node_modules/pdf-lib/dist/pdf-lib.esm.js'
 import { appState, dispatch, PRIMARY_SOURCE_ID, createPageEntry, normalizeRotation } from './state.js'
 import { setPrimarySource, clearPdfSources } from './renderer.js'
-import { showToast, showErrorModal } from './main.js'
+import { showToast, showErrorModal, withDocumentLoading } from './main.js'
 
 const LOAD_OPTS = { ignoreEncryption: true }
 
@@ -10,20 +10,51 @@ function basename(p) {
   return p.split(/[\\/]/).pop()
 }
 
+function confirmDiscardIfDirty() {
+  if (!appState.filePath || !appState.dirty) return true
+  return window.confirm('You have unsaved changes. Open a different file anyway?')
+}
+
 export async function openFile() {
   try {
-    if (appState.filePath && appState.dirty) {
-      const ok = window.confirm('You have unsaved changes. Open a different file anyway?')
-      if (!ok) return
-    }
+    if (appState.loading) return
+    if (!confirmDiscardIfDirty()) return
     const result = await window.electronAPI.openFile()
     if (!result) return
     const { path, buffer } = result
-    await loadFromBytes(path, buffer)
+    await withDocumentLoading(() => loadFromBytes(path, buffer))
   } catch (err) {
     console.error(err)
     // loadFromBytes already presents the error modal.
   }
+}
+
+export async function openPath(filePath) {
+  if (!filePath) return
+  if (appState.loading) return
+  if (!confirmDiscardIfDirty()) return
+  try {
+    await withDocumentLoading(async () => {
+      let buffer
+      try {
+        buffer = await window.electronAPI.openFileBytes(filePath)
+      } catch (err) {
+        console.error(err)
+        showErrorModal('Could not open this file. It may have been moved or deleted.')
+        return
+      }
+      await loadFromBytes(filePath, buffer)
+    })
+  } catch (err) {
+    // loadFromBytes already presents the error modal.
+  }
+}
+
+export function initOsFileOpen() {
+  if (!window.electronAPI?.onOpenPath) return
+  window.electronAPI.onOpenPath((filePath) => {
+    openPath(filePath)
+  })
 }
 
 export async function loadFromBytes(filePath, bytes) {

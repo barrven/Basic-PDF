@@ -408,10 +408,11 @@ async function renderPageCanvas(index, token) {
     if (err && err.name === 'RenderingCancelledException') return
     if (err && err.name === 'AbortException') return
     console.error('preview render failed', err)
+    const styles = getComputedStyle(document.documentElement)
     const ctx = view.canvas.getContext('2d')
-    ctx.fillStyle = '#2A2A2A'
+    ctx.fillStyle = styles.getPropertyValue('--render-error-bg').trim() || '#2A2A2A'
     ctx.fillRect(0, 0, view.canvas.width, view.canvas.height)
-    ctx.fillStyle = '#888888'
+    ctx.fillStyle = styles.getPropertyValue('--text-muted').trim() || '#888888'
     ctx.font = '14px "DM Sans", sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'

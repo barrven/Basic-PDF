@@ -75,6 +75,7 @@ export const appState = {
   dirty: false,
   placementSig: null,
   selectedSig: null,
+  loading: false,
   history: {
     past: [],
     future: [],
@@ -145,8 +146,13 @@ export function dispatch(action) {
       appState.placementSig = null
       appState.selectedSig = null
       appState.zoom = null
+      appState.loading = false
       appState.history.past = []
       appState.history.future = []
+      break
+    }
+    case 'SET_LOADING': {
+      appState.loading = Boolean(action.loading)
       break
     }
     case 'ADD_SOURCE': {

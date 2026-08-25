@@ -1,8 +1,12 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, Menu, nativeTheme } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
+let mainWindow = null
+let pendingOpenPath = null
 let store = null
+let rendererDirty = false
+
 async function getStore() {
   if (store) return store
   const Store = (await import('electron-store')).default
@@ -10,6 +14,47 @@ async function getStore() {
   migrateLegacyStore(store)
   return store
 }
+
+function isPdfPath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return false
+  if (filePath.startsWith('-')) return false
+  return filePath.toLowerCase().endsWith('.pdf')
+}
+
+// Windows Default Apps launches the exe with the PDF as an argv entry.
+// Packaged: [exe, file.pdf]  Dev: [electron, ., file.pdf]
+function pdfPathFromArgv(argv, cwd = process.cwd()) {
+  if (!Array.isArray(argv)) return null
+  for (const arg of argv) {
+    if (!isPdfPath(arg)) continue
+    if (arg === process.execPath) continue
+    return path.resolve(cwd, arg)
+  }
+  return null
+}
+
+function sendOpenPath() {
+  if (!pendingOpenPath || !mainWindow || mainWindow.isDestroyed()) return
+  const filePath = pendingOpenPath
+  pendingOpenPath = null
+  mainWindow.webContents.send('open-path', filePath)
+}
+
+function queueOpenPath(filePath) {
+  if (!filePath) return
+  pendingOpenPath = filePath
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.webContents.isLoadingMainFrame()) return
+  sendOpenPath()
+}
+
+// macOS delivers the file via this event, which can fire before ready.
+app.on('open-file', (event, filePath) => {
+  event.preventDefault()
+  if (isPdfPath(filePath)) queueOpenPath(path.resolve(filePath))
+})
+
+queueOpenPath(pdfPathFromArgv(process.argv))
 
 // One-time migration from older store filenames.
 function migrateLegacyStore(newStore) {
@@ -26,19 +71,77 @@ function migrateLegacyStore(newStore) {
   }
 }
 
+function normalizeTheme(value) {
+  return value === 'light' || value === 'dark' ? value : 'system'
+}
+
+function windowChrome() {
+  if (nativeTheme.shouldUseDarkColors) {
+    return {
+      backgroundColor: '#111111',
+      overlayColor: '#1C1C1C',
+      symbolColor: '#E8E8E8',
+    }
+  }
+  return {
+    backgroundColor: '#D8D8D8',
+    overlayColor: '#F4F4F4',
+    symbolColor: '#1A1A1A',
+  }
+}
+
+function applyWindowChrome() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const chrome = windowChrome()
+  mainWindow.setBackgroundColor(chrome.backgroundColor)
+  try {
+    mainWindow.setTitleBarOverlay({
+      color: chrome.overlayColor,
+      symbolColor: chrome.symbolColor,
+      height: 36,
+    })
+  } catch {}
+}
+
+function themePayload(preference) {
+  return {
+    preference: normalizeTheme(preference),
+    dark: nativeTheme.shouldUseDarkColors,
+  }
+}
+
+function broadcastTheme(preference) {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send('theme-updated', themePayload(preference))
+}
+
+async function applyStoredTheme() {
+  const s = await getStore()
+  nativeTheme.themeSource = normalizeTheme(s.get('theme'))
+}
+
+nativeTheme.on('updated', () => {
+  applyWindowChrome()
+  if (!app.isReady()) return
+  getStore()
+    .then((s) => broadcastTheme(s.get('theme')))
+    .catch(() => broadcastTheme('system'))
+})
+
 function createWindow() {
+  const chrome = windowChrome()
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    backgroundColor: '#111111',
+    backgroundColor: chrome.backgroundColor,
     icon: path.join(__dirname, '..', 'icon.png'),
     title: 'Basic PDF',
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#1C1C1C',
-      symbolColor: '#E8E8E8',
+      color: chrome.overlayColor,
+      symbolColor: chrome.symbolColor,
       height: 36,
     },
     webPreferences: {
@@ -50,10 +153,36 @@ function createWindow() {
 
   // Keep Ctrl/Cmd+wheel for the preview zoom handler; do not zoom the whole UI.
   win.webContents.setVisualZoomLevelLimits(1, 1)
+  win.webContents.on('did-finish-load', () => {
+    sendOpenPath()
+  })
+  win.on('close', (e) => {
+    if (!rendererDirty) return
+    const result = dialog.showMessageBoxSync(win, {
+      type: 'question',
+      buttons: ['Cancel', 'Close without saving'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: 'Unsaved changes',
+      message: 'You have unsaved changes. Close without saving?',
+    })
+    if (result !== 1) {
+      e.preventDefault()
+      return
+    }
+    rendererDirty = false
+  })
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null
+  })
+  mainWindow = win
+  rendererDirty = false
   win.loadFile(path.join(__dirname, '..', 'index.html'))
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await applyStoredTheme()
   if (process.platform === 'darwin' && app.dock) {
     app.dock.setIcon(path.join(__dirname, '..', 'icon.png'))
   }
@@ -124,6 +253,10 @@ ipcMain.handle('show-context-menu', async (event, items) => {
   })
 })
 
+ipcMain.on('set-dirty', (_event, dirty) => {
+  rendererDirty = !!dirty
+})
+
 ipcMain.handle('store-get', async (_event, key) => {
   const s = await getStore()
   return s.get(key)
@@ -133,4 +266,18 @@ ipcMain.handle('store-set', async (_event, key, value) => {
   const s = await getStore()
   s.set(key, value)
   return true
+})
+
+ipcMain.handle('get-theme', async () => {
+  const s = await getStore()
+  return themePayload(s.get('theme'))
+})
+
+ipcMain.handle('set-theme', async (_event, preference) => {
+  const next = normalizeTheme(preference)
+  const s = await getStore()
+  s.set('theme', next)
+  nativeTheme.themeSource = next
+  applyWindowChrome()
+  return themePayload(next)
 })

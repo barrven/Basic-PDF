@@ -1,4 +1,0 @@
-- enable signature drag corner to resize
-- add markdown features: text entry, line drawing, text highlighting
-- add the ability to switch between light and dark display modes. default should follow whatever the OS has set.
-- update unsaved changes check when closing file. currently, the check only works when closing a file, not when closing the application.
