@@ -23,7 +23,7 @@ This is a vanilla-JS Electron desktop app with no bundler and no frontend framew
 
 ### Process boundary
 
-**Main process** (`electron/main.js`) owns all native OS access: file open/save dialogs, filesystem reads/writes, right-click context menus, persistent settings via `electron-store`, and OS-level "open this PDF". It exposes seven invoke handlers (`open-file`, `open-file-bytes`, `save-file`, `save-file-as`, `show-context-menu`, `store-get`, `store-set`) plus a one-way `open-path` event to the renderer.
+**Main process** (`electron/main.js`) owns all native OS access: file open/save dialogs, filesystem reads/writes, right-click context menus, persistent settings via `electron-store`, OS-level "open this PDF", and the display theme (`nativeTheme.themeSource`). It exposes nine invoke handlers (`open-file`, `open-file-bytes`, `save-file`, `save-file-as`, `show-context-menu`, `store-get`, `store-set`, `get-theme`, `set-theme`) plus one-way `open-path` and `theme-updated` events to the renderer. Theme preference is `'system'` (default, follows the OS), `'light'`, or `'dark'`. Window `backgroundColor` and `titleBarOverlay` colors track the resolved appearance.
 
 Windows Default Apps launches a new process with the PDF as an argv entry (`[exe, file.pdf]` packaged, `[electron, ., file.pdf]` in dev). macOS uses the `open-file` event, which can fire before `ready`. The path is queued until `did-finish-load`, then sent to the renderer. There is no single-instance lock — each launch gets its own window.
 
@@ -37,7 +37,7 @@ Windows Default Apps launches a new process with the PDF as an argv entry (`[exe
 - `focusedPage` alone scrolls the existing stack (`scrollPreviewToFocused()`); it does not re-rasterize canvases.
 - `signatures` / `selectedSig` changes only refresh overlay DOM.
 
-**State** (`src/state.js`) is a single `appState` object mutated only through `dispatch(action)`. Subscribers are notified after every dispatch. Undo/redo snapshots only `pages` and `signatures` (not zoom, selection, etc.), capped at 50 entries.
+**State** (`src/state.js`) is a single `appState` object mutated only through `dispatch(action)`. Subscribers are notified after every dispatch. Undo/redo snapshots only `pages` and `signatures` (not zoom, selection, loading, etc.), capped at 50 entries. `loading` is set while a PDF is opened or inserted; a workspace overlay spinner stays up until the preview stack has been laid out.
 
 **Two-library PDF model**: The app uses two separate PDF libraries with distinct roles:
 - **pdf.js** (`src/renderer.js`) — renders pages to `<canvas>` for display only. Each loaded file is keyed by a `sourceId` in a module-level `Map`.
@@ -62,7 +62,7 @@ The preview pane (`#preview-pane`) is a continuous vertical stack of `.preview-p
 | File | Role |
 |------|------|
 | `src/state.js` | Central store, dispatch, pub/sub, undo/redo, page ids, signature remapping |
-| `src/main.js` | Boot, render loop, toast, error modal, unsaved `beforeunload`, OS file-open hookup |
+| `src/main.js` | Boot, render loop, toast, error modal, document-loading overlay, unsaved `beforeunload`, OS file-open hookup |
 | `src/renderer.js` | pdf.js wrapper — load/clear sources, page fetch, blank-page helper |
 | `src/pdf-engine.js` | pdf-lib wrapper — open, save, saveAs, close, OS `openPath`, `buildOutputDoc` |
 | `src/toolbar.js` | Toolbar DOM, button wiring, zoom, add/insert/delete/rotate |
@@ -71,6 +71,7 @@ The preview pane (`#preview-pane`) is a continuous vertical stack of `.preview-p
 | `src/preview.js` | Continuous-scroll page stack, lazy canvas render, signature overlays, Ctrl/Cmd+wheel zoom |
 | `src/signature.js` | Signature modal (draw/upload), placement mode, library popover |
 | `src/store.js` | Signature library persistence (electron-store) |
+| `src/theme.js` | Display mode (system / light / dark), title-bar popover, `data-theme` on `<html>` |
 | `src/shortcuts.js` | Global keyboard shortcuts |
 
 ### Keyboard shortcuts (implemented in `src/shortcuts.js`; Ctrl/Cmd+wheel zoom is in `src/preview.js`)

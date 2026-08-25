@@ -1,11 +1,12 @@
-import { appState, subscribe } from './state.js'
+import { appState, dispatch, subscribe } from './state.js'
 import { initToolbar, updateToolbar, updatePageCounter, updateZoomLabel } from './toolbar.js'
 import { initSidebar, renderThumbnails, updateSelectionStyles, scrollFocusedIntoView } from './sidebar.js'
-import { initPreview, renderPreview, renderSignatureOverlays, scrollPreviewToFocused } from './preview.js'
+import { initPreview, renderPreview, renderSignatureOverlays, scrollPreviewToFocused, whenPreviewIdle } from './preview.js'
 import { initSignature } from './signature.js'
 import { initShortcuts } from './shortcuts.js'
 import { initSearch, onSearchDocumentChanged } from './search.js'
 import { initOsFileOpen } from './pdf-engine.js'
+import { initTheme } from './theme.js'
 
 // ─────────── Toast ───────────
 
@@ -21,6 +22,27 @@ export function showToast(message, ms = 2000) {
     t.hidden = true
     toastTimeout = null
   }, ms)
+}
+
+export function updateLoadingOverlay() {
+  const el = document.getElementById('loading-overlay')
+  if (el) el.hidden = !appState.loading
+  const workspace = document.getElementById('workspace')
+  if (workspace) workspace.setAttribute('aria-busy', appState.loading ? 'true' : 'false')
+}
+
+export async function withDocumentLoading(work) {
+  dispatch({ type: 'SET_LOADING', loading: true })
+  try {
+    return await work()
+  } finally {
+    try {
+      await whenPreviewIdle()
+    } catch (err) {
+      console.error(err)
+    }
+    dispatch({ type: 'SET_LOADING', loading: false })
+  }
 }
 
 export function showErrorModal(message) {
@@ -102,6 +124,7 @@ export function render() {
   if (dirtyChanged || fileChanged) {
     updateTitle()
   }
+  updateLoadingOverlay()
   // Toolbar enable/disable depends on lots of things; just re-evaluate.
   updateToolbar()
 
@@ -121,6 +144,7 @@ export function render() {
 // ─────────── Boot ───────────
 
 function init() {
+  initTheme()
   initToolbar()
   initSidebar()
   initPreview()

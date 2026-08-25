@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, Menu, nativeTheme } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
@@ -70,19 +70,77 @@ function migrateLegacyStore(newStore) {
   }
 }
 
+function normalizeTheme(value) {
+  return value === 'light' || value === 'dark' ? value : 'system'
+}
+
+function windowChrome() {
+  if (nativeTheme.shouldUseDarkColors) {
+    return {
+      backgroundColor: '#111111',
+      overlayColor: '#1C1C1C',
+      symbolColor: '#E8E8E8',
+    }
+  }
+  return {
+    backgroundColor: '#D8D8D8',
+    overlayColor: '#F4F4F4',
+    symbolColor: '#1A1A1A',
+  }
+}
+
+function applyWindowChrome() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const chrome = windowChrome()
+  mainWindow.setBackgroundColor(chrome.backgroundColor)
+  try {
+    mainWindow.setTitleBarOverlay({
+      color: chrome.overlayColor,
+      symbolColor: chrome.symbolColor,
+      height: 36,
+    })
+  } catch {}
+}
+
+function themePayload(preference) {
+  return {
+    preference: normalizeTheme(preference),
+    dark: nativeTheme.shouldUseDarkColors,
+  }
+}
+
+function broadcastTheme(preference) {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send('theme-updated', themePayload(preference))
+}
+
+async function applyStoredTheme() {
+  const s = await getStore()
+  nativeTheme.themeSource = normalizeTheme(s.get('theme'))
+}
+
+nativeTheme.on('updated', () => {
+  applyWindowChrome()
+  if (!app.isReady()) return
+  getStore()
+    .then((s) => broadcastTheme(s.get('theme')))
+    .catch(() => broadcastTheme('system'))
+})
+
 function createWindow() {
+  const chrome = windowChrome()
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    backgroundColor: '#111111',
+    backgroundColor: chrome.backgroundColor,
     icon: path.join(__dirname, '..', 'icon.png'),
     title: 'Basic PDF',
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#1C1C1C',
-      symbolColor: '#E8E8E8',
+      color: chrome.overlayColor,
+      symbolColor: chrome.symbolColor,
       height: 36,
     },
     webPreferences: {
@@ -104,7 +162,8 @@ function createWindow() {
   win.loadFile(path.join(__dirname, '..', 'index.html'))
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await applyStoredTheme()
   if (process.platform === 'darwin' && app.dock) {
     app.dock.setIcon(path.join(__dirname, '..', 'icon.png'))
   }
@@ -184,4 +243,18 @@ ipcMain.handle('store-set', async (_event, key, value) => {
   const s = await getStore()
   s.set(key, value)
   return true
+})
+
+ipcMain.handle('get-theme', async () => {
+  const s = await getStore()
+  return themePayload(s.get('theme'))
+})
+
+ipcMain.handle('set-theme', async (_event, preference) => {
+  const next = normalizeTheme(preference)
+  const s = await getStore()
+  s.set('theme', next)
+  nativeTheme.themeSource = next
+  applyWindowChrome()
+  return themePayload(next)
 })

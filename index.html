@@ -10,12 +10,19 @@
       href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
+    <style>
+      html, body { background: #111111; color: #E8E8E8; }
+      @media (prefers-color-scheme: light) {
+        html, body { background: #D8D8D8; color: #1A1A1A; }
+      }
+    </style>
     <link rel="stylesheet" href="src/style.css" />
   </head>
   <body>
     <div id="titlebar" style="-webkit-app-region: drag">
       <div id="app-name">Basic PDF</div>
       <div id="filename"></div>
+      <div id="titlebar-actions"></div>
       <div id="window-controls-spacer"></div>
     </div>
     <div id="toolbar"></div>
@@ -42,6 +49,10 @@
             <p>Click "Open" in the toolbar or press Ctrl/Cmd+O to load a file.</p>
           </div>
         </div>
+      </div>
+      <div id="loading-overlay" hidden role="status" aria-live="polite">
+        <div class="loading-spinner" aria-hidden="true"></div>
+        <p>Loading document…</p>
       </div>
     </div>
     <div id="modal-backdrop" hidden>
@@ -95,6 +106,7 @@
       </div>
     </div>
     <div id="sig-popover" hidden></div>
+    <div id="theme-popover" hidden></div>
     <div id="toast" hidden></div>
     <script type="module" src="src/main.js"></script>
   </body>

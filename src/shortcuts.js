@@ -4,6 +4,7 @@ import { exitPlacementMode, isPlacing } from './signature.js'
 import { deleteSelectedPages, rotateSelected } from './toolbar.js'
 import { textSelectionIsActive, textSelectionIsNonCollapsed, selectAllTextInActiveLayer } from './preview.js'
 import { openFindBar, closeFindBar, isFindBarOpen } from './search.js'
+import { closeThemePopover, isThemePopoverOpen } from './theme.js'
 
 export function initShortcuts() {
   document.addEventListener('keydown', onKeyDown)
@@ -38,6 +39,11 @@ async function onKeyDown(e) {
     return
   }
   if (isTypingTarget(e.target)) return
+
+  if (appState.loading) {
+    if (mod) e.preventDefault()
+    return
+  }
 
   if (mod && !e.shiftKey && (e.key === 'o' || e.key === 'O')) {
     e.preventDefault()
@@ -78,6 +84,10 @@ async function onKeyDown(e) {
   }
   if (e.key === 'Escape') {
     e.preventDefault()
+    if (isThemePopoverOpen()) {
+      closeThemePopover()
+      return
+    }
     if (isPlacing()) {
       exitPlacementMode()
       return

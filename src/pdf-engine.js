@@ -1,7 +1,7 @@
 import { PDFDocument, degrees } from '../node_modules/pdf-lib/dist/pdf-lib.esm.js'
 import { appState, dispatch, PRIMARY_SOURCE_ID, createPageEntry, normalizeRotation } from './state.js'
 import { setPrimarySource, clearPdfSources } from './renderer.js'
-import { showToast, showErrorModal } from './main.js'
+import { showToast, showErrorModal, withDocumentLoading } from './main.js'
 
 const LOAD_OPTS = { ignoreEncryption: true }
 
@@ -17,11 +17,12 @@ function confirmDiscardIfDirty() {
 
 export async function openFile() {
   try {
+    if (appState.loading) return
     if (!confirmDiscardIfDirty()) return
     const result = await window.electronAPI.openFile()
     if (!result) return
     const { path, buffer } = result
-    await loadFromBytes(path, buffer)
+    await withDocumentLoading(() => loadFromBytes(path, buffer))
   } catch (err) {
     console.error(err)
     // loadFromBytes already presents the error modal.
@@ -30,17 +31,20 @@ export async function openFile() {
 
 export async function openPath(filePath) {
   if (!filePath) return
+  if (appState.loading) return
   if (!confirmDiscardIfDirty()) return
-  let buffer
   try {
-    buffer = await window.electronAPI.openFileBytes(filePath)
-  } catch (err) {
-    console.error(err)
-    showErrorModal('Could not open this file. It may have been moved or deleted.')
-    return
-  }
-  try {
-    await loadFromBytes(filePath, buffer)
+    await withDocumentLoading(async () => {
+      let buffer
+      try {
+        buffer = await window.electronAPI.openFileBytes(filePath)
+      } catch (err) {
+        console.error(err)
+        showErrorModal('Could not open this file. It may have been moved or deleted.')
+        return
+      }
+      await loadFromBytes(filePath, buffer)
+    })
   } catch (err) {
     // loadFromBytes already presents the error modal.
   }

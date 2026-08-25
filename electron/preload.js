@@ -11,6 +11,12 @@ ipcRenderer.on('open-path', (_event, filePath) => {
   }
 })
 
+const themeUpdatedListeners = []
+
+ipcRenderer.on('theme-updated', (_event, info) => {
+  for (const listener of themeUpdatedListeners) listener(info)
+})
+
 contextBridge.exposeInMainWorld('electronAPI', {
   openFile:        ()                    => ipcRenderer.invoke('open-file'),
   openFileBytes:   (path)                => ipcRenderer.invoke('open-file-bytes', path),
@@ -19,6 +25,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showContextMenu: (items)               => ipcRenderer.invoke('show-context-menu', items),
   getStoreValue:   (key)                 => ipcRenderer.invoke('store-get', key),
   setStoreValue:   (key, value)          => ipcRenderer.invoke('store-set', key, value),
+  getTheme:        ()                    => ipcRenderer.invoke('get-theme'),
+  setTheme:        (preference)          => ipcRenderer.invoke('set-theme', preference),
+  onThemeUpdated: (callback) => {
+    themeUpdatedListeners.push(callback)
+  },
   onOpenPath: (callback) => {
     openPathHandler = callback
     if (queuedOpenPath) {
