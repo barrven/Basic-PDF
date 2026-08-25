@@ -143,6 +143,16 @@ export function render() {
 
 // ─────────── Boot ───────────
 
+let lastSentDirty = null
+
+function syncDirtyToMain() {
+  if (!window.electronAPI?.setDirty) return
+  const dirty = !!appState.dirty
+  if (dirty === lastSentDirty) return
+  lastSentDirty = dirty
+  window.electronAPI.setDirty(dirty)
+}
+
 function init() {
   initTheme()
   initToolbar()
@@ -153,9 +163,11 @@ function init() {
   initShortcuts()
 
   subscribe(render)
+  subscribe(syncDirtyToMain)
 
   // Initial render — empty state.
   render()
+  syncDirtyToMain()
 
   initOsFileOpen()
 
@@ -163,12 +175,6 @@ function init() {
   window.addEventListener('unhandledrejection', (e) => {
     console.error('unhandledrejection', e.reason)
     showToast('An unexpected error occurred.')
-  })
-
-  window.addEventListener('beforeunload', (e) => {
-    if (!appState.dirty) return
-    e.preventDefault()
-    e.returnValue = ''
   })
 }
 

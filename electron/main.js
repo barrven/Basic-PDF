@@ -5,6 +5,7 @@ const fs = require('fs')
 let mainWindow = null
 let pendingOpenPath = null
 let store = null
+let rendererDirty = false
 
 async function getStore() {
   if (store) return store
@@ -155,10 +156,28 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => {
     sendOpenPath()
   })
+  win.on('close', (e) => {
+    if (!rendererDirty) return
+    const result = dialog.showMessageBoxSync(win, {
+      type: 'question',
+      buttons: ['Cancel', 'Close without saving'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: 'Unsaved changes',
+      message: 'You have unsaved changes. Close without saving?',
+    })
+    if (result !== 1) {
+      e.preventDefault()
+      return
+    }
+    rendererDirty = false
+  })
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null
   })
   mainWindow = win
+  rendererDirty = false
   win.loadFile(path.join(__dirname, '..', 'index.html'))
 }
 
@@ -232,6 +251,10 @@ ipcMain.handle('show-context-menu', async (event, items) => {
       },
     })
   })
+})
+
+ipcMain.on('set-dirty', (_event, dirty) => {
+  rendererDirty = !!dirty
 })
 
 ipcMain.handle('store-get', async (_event, key) => {
