@@ -660,7 +660,7 @@ button:disabled {
 }
 
 .preview-page .annot-highlight-layer {
-  z-index: 0;
+  z-index: auto;
 }
 
 .preview-page .annot-redact-layer {
@@ -676,7 +676,6 @@ button:disabled {
 .preview-page .annot-highlight-rect {
   background: #ffe566;
   mix-blend-mode: multiply;
-  opacity: 0.9;
   pointer-events: none;
 }
 

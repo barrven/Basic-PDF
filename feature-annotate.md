@@ -38,7 +38,7 @@ They are session edits, not round-tripped PDF annotation objects. Opening a file
 Each `.preview-page` stack is:
 
 1. `<canvas>`
-2. `.annot-highlight-layer` (pointer-events none, `mix-blend-mode: multiply`)
+2. `.annot-highlight-layer` (pointer-events none; rects use `mix-blend-mode: multiply` with no extra opacity so glyphs stay dark like the saved PDF)
 3. `.textLayer`
 4. `.annot-redact-layer` (pointer-events on the black rects)
 5. `.signature-overlay-layer`
