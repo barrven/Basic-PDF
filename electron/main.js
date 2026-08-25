@@ -2,7 +2,10 @@ const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
+let mainWindow = null
+let pendingOpenPath = null
 let store = null
+
 async function getStore() {
   if (store) return store
   const Store = (await import('electron-store')).default
@@ -10,6 +13,47 @@ async function getStore() {
   migrateLegacyStore(store)
   return store
 }
+
+function isPdfPath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return false
+  if (filePath.startsWith('-')) return false
+  return filePath.toLowerCase().endsWith('.pdf')
+}
+
+// Windows Default Apps launches the exe with the PDF as an argv entry.
+// Packaged: [exe, file.pdf]  Dev: [electron, ., file.pdf]
+function pdfPathFromArgv(argv, cwd = process.cwd()) {
+  if (!Array.isArray(argv)) return null
+  for (const arg of argv) {
+    if (!isPdfPath(arg)) continue
+    if (arg === process.execPath) continue
+    return path.resolve(cwd, arg)
+  }
+  return null
+}
+
+function sendOpenPath() {
+  if (!pendingOpenPath || !mainWindow || mainWindow.isDestroyed()) return
+  const filePath = pendingOpenPath
+  pendingOpenPath = null
+  mainWindow.webContents.send('open-path', filePath)
+}
+
+function queueOpenPath(filePath) {
+  if (!filePath) return
+  pendingOpenPath = filePath
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.webContents.isLoadingMainFrame()) return
+  sendOpenPath()
+}
+
+// macOS delivers the file via this event, which can fire before ready.
+app.on('open-file', (event, filePath) => {
+  event.preventDefault()
+  if (isPdfPath(filePath)) queueOpenPath(path.resolve(filePath))
+})
+
+queueOpenPath(pdfPathFromArgv(process.argv))
 
 // One-time migration from older store filenames.
 function migrateLegacyStore(newStore) {
@@ -50,6 +94,13 @@ function createWindow() {
 
   // Keep Ctrl/Cmd+wheel for the preview zoom handler; do not zoom the whole UI.
   win.webContents.setVisualZoomLevelLimits(1, 1)
+  win.webContents.on('did-finish-load', () => {
+    sendOpenPath()
+  })
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null
+  })
+  mainWindow = win
   win.loadFile(path.join(__dirname, '..', 'index.html'))
 }
 

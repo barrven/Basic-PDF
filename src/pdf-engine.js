@@ -10,12 +10,14 @@ function basename(p) {
   return p.split(/[\\/]/).pop()
 }
 
+function confirmDiscardIfDirty() {
+  if (!appState.filePath || !appState.dirty) return true
+  return window.confirm('You have unsaved changes. Open a different file anyway?')
+}
+
 export async function openFile() {
   try {
-    if (appState.filePath && appState.dirty) {
-      const ok = window.confirm('You have unsaved changes. Open a different file anyway?')
-      if (!ok) return
-    }
+    if (!confirmDiscardIfDirty()) return
     const result = await window.electronAPI.openFile()
     if (!result) return
     const { path, buffer } = result
@@ -24,6 +26,31 @@ export async function openFile() {
     console.error(err)
     // loadFromBytes already presents the error modal.
   }
+}
+
+export async function openPath(filePath) {
+  if (!filePath) return
+  if (!confirmDiscardIfDirty()) return
+  let buffer
+  try {
+    buffer = await window.electronAPI.openFileBytes(filePath)
+  } catch (err) {
+    console.error(err)
+    showErrorModal('Could not open this file. It may have been moved or deleted.')
+    return
+  }
+  try {
+    await loadFromBytes(filePath, buffer)
+  } catch (err) {
+    // loadFromBytes already presents the error modal.
+  }
+}
+
+export function initOsFileOpen() {
+  if (!window.electronAPI?.onOpenPath) return
+  window.electronAPI.onOpenPath((filePath) => {
+    openPath(filePath)
+  })
 }
 
 export async function loadFromBytes(filePath, bytes) {

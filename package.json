@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "build": "electron-builder"
+    "build": "electron-builder --config .electron-builder.yml"
   },
   "build": {},
   "dependencies": {

@@ -9,6 +9,12 @@ files:
   - icon.png
   - node_modules/**/*
   - package.json
+fileAssociations:
+  - ext: pdf
+    name: PDF Document
+    description: PDF Document
+    mimeType: application/pdf
+    role: Editor
 win:
   target: nsis
   icon: icon.png

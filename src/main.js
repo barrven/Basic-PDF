@@ -5,6 +5,7 @@ import { initPreview, renderPreview, renderSignatureOverlays, scrollPreviewToFoc
 import { initSignature } from './signature.js'
 import { initShortcuts } from './shortcuts.js'
 import { initSearch, onSearchDocumentChanged } from './search.js'
+import { initOsFileOpen } from './pdf-engine.js'
 
 // ─────────── Toast ───────────
 
@@ -131,6 +132,8 @@ function init() {
 
   // Initial render — empty state.
   render()
+
+  initOsFileOpen()
 
   // Uncaught rejection toast.
   window.addEventListener('unhandledrejection', (e) => {
