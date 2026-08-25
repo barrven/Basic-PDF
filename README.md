@@ -68,4 +68,4 @@ See `CLAUDE.md` for a full module-by-module breakdown.
 
 ## License
 
-MIT © 2026m barrven
+MIT © 2026 barrven
