@@ -30,6 +30,25 @@ async function getStore() {
   return store
 }
 
+async function rememberLastDir(filePath) {
+  if (!filePath || typeof filePath !== 'string') return
+  const dir = path.dirname(filePath)
+  if (!dir) return
+  const s = await getStore()
+  s.set('lastDir', dir)
+}
+
+async function lastDirDefaultPath() {
+  const s = await getStore()
+  const dir = s.get('lastDir')
+  if (typeof dir !== 'string' || !dir) return null
+  try {
+    const st = await fs.promises.stat(dir)
+    if (st.isDirectory()) return dir
+  } catch {}
+  return null
+}
+
 function isPdfPath(filePath) {
   if (!filePath || typeof filePath !== 'string') return false
   if (filePath.startsWith('-')) return false
@@ -217,34 +236,43 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('open-file', async (event) => {
   const win = BrowserWindow.fromWebContents(event.sender)
-  const result = await dialog.showOpenDialog(win, {
+  const opts = {
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
     properties: ['openFile'],
-  })
+  }
+  const lastDir = await lastDirDefaultPath()
+  if (lastDir) opts.defaultPath = lastDir
+  const result = await dialog.showOpenDialog(win, opts)
   if (result.canceled || result.filePaths.length === 0) return null
   const filePath = result.filePaths[0]
+  await rememberLastDir(filePath)
   const buffer = await fs.promises.readFile(filePath)
   return { path: filePath, buffer: new Uint8Array(buffer) }
 })
 
 ipcMain.handle('open-file-bytes', async (_event, filePath) => {
   const buffer = await fs.promises.readFile(filePath)
+  await rememberLastDir(filePath)
   return new Uint8Array(buffer)
 })
 
 ipcMain.handle('save-file', async (_event, filePath, buffer) => {
   await fs.promises.writeFile(filePath, Buffer.from(buffer))
+  await rememberLastDir(filePath)
   return true
 })
 
 ipcMain.handle('save-file-as', async (event, buffer, defaultName) => {
   const win = BrowserWindow.fromWebContents(event.sender)
+  const name = defaultName || 'document.pdf'
+  const lastDir = await lastDirDefaultPath()
   const result = await dialog.showSaveDialog(win, {
-    defaultPath: defaultName || 'document.pdf',
+    defaultPath: lastDir ? path.join(lastDir, name) : name,
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   })
   if (result.canceled || !result.filePath) return null
   await fs.promises.writeFile(result.filePath, Buffer.from(buffer))
+  await rememberLastDir(result.filePath)
   return result.filePath
 })
 
