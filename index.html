@@ -3,6 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none';"
+    />
     <title>Basic PDF</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -19,8 +23,8 @@
     <link rel="stylesheet" href="src/style.css" />
   </head>
   <body>
-    <div id="titlebar" style="-webkit-app-region: drag">
-      <div id="app-name">Basic PDF</div>
+    <div id="titlebar">
+      <button type="button" id="app-name" aria-haspopup="menu" aria-expanded="false" aria-controls="about-popover" title="Basic PDF">Basic PDF</button>
       <div id="filename"></div>
       <div id="titlebar-actions"></div>
       <div id="window-controls-spacer"></div>
@@ -91,6 +95,25 @@
         </div>
       </div>
     </div>
+    <div id="about-modal-backdrop" hidden>
+      <div id="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-name">
+        <div class="modal-header">
+          <h2>About</h2>
+          <button class="modal-close" data-action="close-about-modal" aria-label="Close">×</button>
+        </div>
+        <div class="modal-body">
+          <img id="about-icon" src="icon.png" alt="" width="64" height="64" />
+          <h3 id="about-name">Basic PDF</h3>
+          <p id="about-version"></p>
+          <p id="about-description"></p>
+          <p id="about-copyright"></p>
+          <div class="modal-row">
+            <div class="modal-spacer"></div>
+            <button class="btn-primary" data-action="close-about-modal">OK</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <div id="error-modal-backdrop" hidden>
       <div id="error-modal">
         <div class="modal-header">
@@ -107,6 +130,7 @@
     </div>
     <div id="sig-popover" hidden></div>
     <div id="theme-popover" hidden></div>
+    <div id="about-popover" hidden></div>
     <div id="toast" hidden></div>
     <script type="module" src="src/main.js"></script>
   </body>

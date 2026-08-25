@@ -5,6 +5,7 @@ import { deleteSelectedPages, rotateSelected } from './toolbar.js'
 import { textSelectionIsActive, textSelectionIsNonCollapsed, selectAllTextInActiveLayer } from './preview.js'
 import { openFindBar, closeFindBar, isFindBarOpen } from './search.js'
 import { closeThemePopover, isThemePopoverOpen } from './theme.js'
+import { closeAboutMenu, closeAboutModal, isAboutMenuOpen, isAboutModalOpen } from './about.js'
 
 export function initShortcuts() {
   document.addEventListener('keydown', onKeyDown)
@@ -23,7 +24,7 @@ function isTypingTarget(el) {
 function modalIsOpen() {
   const m = document.getElementById('modal-backdrop')
   const e = document.getElementById('error-modal-backdrop')
-  return (m && !m.hidden) || (e && !e.hidden)
+  return (m && !m.hidden) || (e && !e.hidden) || isAboutModalOpen()
 }
 
 async function onKeyDown(e) {
@@ -86,6 +87,14 @@ async function onKeyDown(e) {
     e.preventDefault()
     if (isThemePopoverOpen()) {
       closeThemePopover()
+      return
+    }
+    if (isAboutMenuOpen()) {
+      closeAboutMenu()
+      return
+    }
+    if (isAboutModalOpen()) {
+      closeAboutModal()
       return
     }
     if (isPlacing()) {

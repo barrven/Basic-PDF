@@ -1,30 +1,24 @@
 # Feature: select text with the cursor
 
-Assessment of adding pointer-based text selection (and copy) to the current Basic PDF preview.
+**Status:** implemented. Drag-select and copy work on visible preview pages via a pdf.js `TextLayer`. This document describes the as-built behavior and the remaining follow-ons.
 
-**Verdict:** select-and-copy is a moderate, well-supported add — roughly a day or two for a solid first version. The PDF library already in the project does this. Editing the PDF text itself would be a different, much harder project.
+Editing the PDF text itself is a different, much harder project and is not in scope.
 
 ---
 
-## Current state
+## What shipped
 
 The preview (`src/preview.js`) is a continuous vertical stack of `.preview-page` nodes. Each page is:
 
 1. A `<canvas>` rasterized by pdf.js
-2. A `.signature-overlay-layer` on top for stamps
+2. A `.textLayer` div (pdf.js `TextLayer`) between the canvas and the stamps
+3. A `.signature-overlay-layer` on top for stamps
 
-A canvas is pixels. There is no DOM text, so the cursor has nothing to select. `src/renderer.js` only uses pdf.js to load documents and paint pages. There is no `getTextContent`, `TextLayer`, or text-layer CSS today.
+`src/renderer.js` loads documents with `cMapUrl` / `cMapPacked` and `standardFontDataUrl` (`useWorkerFetch: false`). `getPageTextContent(sourceId, originalIndex)` caches `page.getTextContent()` so the text layer and find share one extract.
 
-The app already depends on `pdfjs-dist` **4.10.38**, which exports `TextLayer` from the same `pdf.mjs` loaded in `src/renderer.js`. Each page already fetched can also provide `page.getTextContent()`. The viewport used to paint the canvas already includes scale and rotation:
+Blank pages (`originalIndex === -1`) and image-only scans have no text items, so selection does nothing — which is correct.
 
-```js
-const viewport = page.getViewport({ scale: view.scale, rotation: entry.rotation })
-await page.render({ canvasContext: ctx, viewport }).promise
-```
-
-That same `viewport` is what `TextLayer` needs.
-
-Blank pages (`originalIndex === -1`) and image-only scans have no text items, so selection would do nothing — which is correct.
+The app depends on `pdfjs-dist` **4.10.38**, which exports `TextLayer` from the same `pdf.mjs` already imported for rendering.
 
 ---
 
@@ -32,90 +26,88 @@ Blank pages (`originalIndex === -1`) and image-only scans have no text items, so
 
 pdf.js does not make the canvas selectable. It paints an invisible HTML text overlay on top of the canvas, with spans positioned to match the glyphs. The browser then handles drag-select and Ctrl/Cmd+C.
 
-Two APIs ship with the installed package:
+Two APIs ship with the package:
 
 | API | Where | Role |
 |---|---|---|
-| `TextLayer` | `pdfjs-dist/build/pdf.mjs` (already imported) | Core: takes `textContentSource` + `container` + `viewport`, renders spans |
+| `TextLayer` | `pdfjs-dist/build/pdf.mjs` (used) | Core: takes `textContentSource` + `container` + `viewport`, renders spans |
 | `TextLayerBuilder` | `pdfjs-dist/web/` viewer components | Same overlay, plus a global listener so selection can cross page boundaries |
 
-For one-page-at-a-time select+copy, the core `TextLayer` class is enough. The full pdf.js viewer is not required.
+v1 uses `TextLayer` only. Cross-page selection is not supported.
 
-Standard styles live in `pdfjs-dist/web/pdf_viewer.css` under `.textLayer` (transparent text, `user-select: text`, absolute positioning). Those rules can be copied/adapted into `src/style.css` rather than importing the entire viewer stylesheet.
+`.textLayer` rules (transparent text, `user-select: text`, rotation via `data-main-rotation`, `::selection` styling) live in `src/style.css`. The full pdf.js viewer stylesheet is not imported.
 
 ---
 
-## Proposed v1 (copy-only)
+## Implementation
 
-Work is concentrated in `src/preview.js` plus some CSS. Scope: drag to select text on a visible page and copy it. Do not edit, delete, or search yet.
+Work is concentrated in `src/preview.js` plus CSS in `src/style.css` and the extract cache in `src/renderer.js`.
 
-1. Add a `.textLayer` div on each `.preview-page`, **between** the canvas and the signature overlay.
-2. After a page canvas paints in `renderPageCanvas()`, run:
+1. Each `.preview-page` gets a `.textLayer` div **between** the canvas and the signature overlay.
+2. After a page canvas paints in `renderPageCanvas()`, `renderPageTextLayer()` runs:
 
    ```js
-   const textContentSource = await page.getTextContent()
+   const textContent = await getPageTextContent(entry.sourceId, entry.originalIndex)
    const layer = new TextLayer({
-     textContentSource,
+     textContentSource: textContent,
      container: view.textLayerEl,
      viewport,
    })
    await layer.render()
    ```
 
-3. Copy/adapt the `.textLayer` rules from `pdfjs-dist/web/pdf_viewer.css`.
-4. Disable pointer events on the text layer while placing a signature, so stamps still land on the page.
-5. Keep signatures above the text layer. The overlay already uses `pointer-events: none` except on `.sig-overlay`, so stamps still win over text.
-6. Skip the text layer for blank pages (`originalIndex === -1`).
-7. Cancel an in-flight `TextLayer` when `lastRenderToken` changes (same token pattern as canvas rasterization).
+3. In-flight `TextLayer` work is cancelled when `lastRenderToken` changes (same token pattern as canvas rasterization).
+4. Blank pages skip the layer and are marked painted immediately.
+5. `#preview-pane.is-placing .textLayer { pointer-events: none }` so stamps still land on the page.
+6. Signatures stay above the text layer. The overlay already uses `pointer-events: none` except on `.sig-overlay`, so stamps still win over text.
+7. Click-after-drag (or a non-collapsed text selection) does not deselect a stamp.
+8. `Ctrl/Cmd+A`: if the selection is inside a text layer, `selectAllTextInActiveLayer()` selects that page’s text; otherwise all pages are selected (`src/shortcuts.js`).
+9. `Delete` / `Backspace` do **not** remove selected text from the PDF. While a non-collapsed text selection is active, the shortcut does not delete pages.
 
-Zoom already rebuilds the whole preview stack, so the text layer rebuilds with the canvases. Native selection is lost on zoom — same as most PDF viewers, acceptable for v1.
-
----
-
-## Interaction conflicts
-
-The rendering is the easy part. The mouse and keyboard already mean other things:
-
-| Existing behavior | Conflict | v1 handling |
-|---|---|---|
-| Click on the page deselects a signature | A text drag ends in a `click`. That would wipe the selection and/or deselect stamps. | Ignore click-after-drag (or only deselect if the selection is collapsed). |
-| Signature placement mode | The text layer would steal the click. | `pointer-events: none` on `.textLayer` while placing. |
-| `Ctrl/Cmd+A` selects every page (`src/shortcuts.js`) | Users will expect it to select all text once they have a text selection. | If the selection is inside a text layer, let the browser select text (or select all text on the focused page). Otherwise keep current page-select behavior. |
-| `Delete` / `Backspace` deletes pages or a stamp | Fine if selection is copy-only. | Do **not** wire delete to “remove the selected text from the PDF.” |
-| Zoom rebuilds the preview DOM | Native selection dies on zoom. | Acceptable. |
-| Lazy `IntersectionObserver` render | Off-screen pages have no text layer yet. | Cannot select across them until they paint. Fine for v1. |
-| Selecting across two pages | Browser selection does not join two separate overlay trees. | Skip for v1. `TextLayerBuilder` has a global listener if this is needed later. |
+Zoom already rebuilds the whole preview stack, so the text layer rebuilds with the canvases. Native selection is lost on zoom — same as most PDF viewers.
 
 ---
 
-## Encoding / CJK caveat
+## Interaction conflicts (as handled)
 
-CJK and some other encodings may need `cMapUrl` pointed at `pdfjs-dist/cmaps`. `src/renderer.js` does not set that today (`getDocument({ data: copy })` only). Rendering can still look fine while `getTextContent()` returns garbage for those files. Worth wiring `cMapUrl` (and `standardFontDataUrl`) when the text layer lands, even if it is not strictly required for Latin documents.
+| Existing behavior | Handling |
+|---|---|
+| Click on the page deselects a signature | Ignore click-after-drag; ignore click while a text selection is non-collapsed. |
+| Signature placement mode | `pointer-events: none` on `.textLayer` while placing. |
+| `Ctrl/Cmd+A` selects every page | If the selection is inside a text layer, select all text on that page. Otherwise keep page-select. |
+| `Delete` / `Backspace` deletes pages or a stamp | Skip page delete while a text selection is non-collapsed. Never delete glyphs from the PDF. |
+| Zoom rebuilds the preview DOM | Native selection dies on zoom. Accepted. |
+| Lazy `IntersectionObserver` render | Off-screen pages have no text layer yet. Cannot select across them until they paint. |
+| Selecting across two pages | Not implemented. `TextLayerBuilder` has a global listener if this is needed later. |
+
+---
+
+## Encoding / CJK
+
+`getDocument()` sets `cMapUrl`, `cMapPacked: true`, and `standardFontDataUrl`. Worker-side fetch of those `file://` assets is disabled (`useWorkerFetch: false`) because it is unreliable in Electron.
 
 ---
 
 ## What this is not
 
-- **Not OCR.** A scanned page with no real text stream has nothing to select. That would be a separate pipeline.
-- **Not in-place text editing.** Replacing glyphs in the original content stream is not something pdf-lib does cleanly, and it does not belong in this overlay. Overlay + copy is a display feature; mutating the PDF is a document-model feature.
-- **Not highlight / redact as a saved annotation.** Possible later (text items expose quad points), but out of v1.
+- **Not OCR.** A scanned page with no real text stream has nothing to select.
+- **Not in-place text editing.** Overlay + copy is a display feature; mutating the PDF is a document-model feature.
+- **Not highlight / redact as a saved annotation.** Find highlights are session-only (see `feature-search-text.md`).
+- **Not cross-page selection.**
 
 ---
 
-## Follow-on: search
+## Follow-ons (not implemented)
 
-`todos.txt` already lists “add search feature with ctrl + f”. Find-in-page uses the same text layer: `getTextContent()` for the query, then highlight matching spans. If the text layer ships first, Ctrl+F becomes much cheaper. Full write-up: `feature-search-text.md`.
+1. Cross-page selection via `TextLayerBuilder`.
+2. OCR for image-only scans.
+3. Saved highlight / redact annotations.
+
+Find-in-page (`Ctrl/Cmd+F`) is implemented on top of this layer — see `feature-search-text.md`.
 
 ---
 
-## Suggested implementation order
+## See also
 
-1. Add `.textLayer` DOM + CSS; render it next to the canvas for visible pages.
-2. Verify select + copy on a text PDF at 0° rotation, then at 90/180/270.
-3. Confirm image-only and blank pages are a no-op.
-4. Disable the layer during signature placement; keep stamp drag/resize working.
-5. Fix click-after-drag vs signature deselect.
-6. Decide `Ctrl/Cmd+A` when a text selection exists.
-7. (Optional) `cMapUrl` / `standardFontDataUrl` for non-Latin text.
-8. (Later) cross-page selection via `TextLayerBuilder`.
-9. (Later) Ctrl+F on top of the same spans.
+- `feature-search-text.md` — find bar, extract cache, on-page highlights
+- `todos.md` — remaining product ideas (annotations, settings, form filling)

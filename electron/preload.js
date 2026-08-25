@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getStoreValue:   (key)                 => ipcRenderer.invoke('store-get', key),
   setStoreValue:   (key, value)          => ipcRenderer.invoke('store-set', key, value),
   setDirty:        (dirty)               => ipcRenderer.send('set-dirty', dirty),
+  getAppInfo:      ()                    => ipcRenderer.invoke('get-app-info'),
   getTheme:        ()                    => ipcRenderer.invoke('get-theme'),
   setTheme:        (preference)          => ipcRenderer.invoke('set-theme', preference),
   onThemeUpdated: (callback) => {

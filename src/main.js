@@ -7,6 +7,7 @@ import { initShortcuts } from './shortcuts.js'
 import { initSearch, onSearchDocumentChanged } from './search.js'
 import { initOsFileOpen } from './pdf-engine.js'
 import { initTheme } from './theme.js'
+import { initAbout } from './about.js'
 
 // ─────────── Toast ───────────
 
@@ -155,6 +156,7 @@ function syncDirtyToMain() {
 
 function init() {
   initTheme()
+  initAbout()
   initToolbar()
   initSidebar()
   initPreview()

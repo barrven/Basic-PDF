@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, nativeTheme } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const pkg = require('../package.json')
 
 let mainWindow = null
 let pendingOpenPath = null
@@ -153,6 +154,10 @@ function createWindow() {
 
   // Keep Ctrl/Cmd+wheel for the preview zoom handler; do not zoom the whole UI.
   win.webContents.setVisualZoomLevelLimits(1, 1)
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-navigate', (event) => {
+    event.preventDefault()
+  })
   win.webContents.on('did-finish-load', () => {
     sendOpenPath()
   })
@@ -267,6 +272,15 @@ ipcMain.handle('store-set', async (_event, key, value) => {
   s.set(key, value)
   return true
 })
+
+ipcMain.handle('get-app-info', () => ({
+  name: pkg.productName || 'Basic PDF',
+  version: app.getVersion(),
+  description: 'A lightweight desktop PDF editor',
+  author: pkg.author || 'barrven',
+  license: pkg.license || 'MIT',
+  copyright: '© 2026 barrven',
+}))
 
 ipcMain.handle('get-theme', async () => {
   const s = await getStore()

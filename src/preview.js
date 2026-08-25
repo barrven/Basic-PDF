@@ -93,7 +93,8 @@ export function initPreview() {
 function modalIsOpen() {
   const m = document.getElementById('modal-backdrop')
   const e = document.getElementById('error-modal-backdrop')
-  return (m && !m.hidden) || (e && !e.hidden)
+  const a = document.getElementById('about-modal-backdrop')
+  return (m && !m.hidden) || (e && !e.hidden) || (a && !a.hidden)
 }
 
 function onPreviewWheel(e) {

@@ -119,10 +119,22 @@ button:disabled {
 }
 
 #app-name {
+  -webkit-app-region: no-drag;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
   letter-spacing: 0.2px;
+  height: 28px;
+  padding: 0 8px;
+  margin-left: -8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+}
+
+#app-name:hover,
+#app-name[aria-expanded="true"] {
+  background: var(--hover);
 }
 
 #filename {
@@ -764,7 +776,8 @@ button:disabled {
 /* ─────────── Modal ─────────── */
 
 #modal-backdrop,
-#error-modal-backdrop {
+#error-modal-backdrop,
+#about-modal-backdrop {
   position: fixed;
   inset: 0;
   background: var(--overlay);
@@ -775,7 +788,8 @@ button:disabled {
 }
 
 #modal-backdrop[hidden],
-#error-modal-backdrop[hidden] {
+#error-modal-backdrop[hidden],
+#about-modal-backdrop[hidden] {
   display: none;
 }
 
@@ -790,12 +804,50 @@ button:disabled {
   overflow: hidden;
 }
 
-#error-modal {
+#error-modal,
+#about-modal {
   width: 440px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
+}
+
+#about-modal {
+  width: 360px;
+}
+
+#about-modal .modal-body {
+  padding: 22px 24px 18px;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+}
+
+#about-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  margin-bottom: 8px;
+}
+
+#about-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+#about-version,
+#about-description,
+#about-copyright {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+#about-modal .modal-row {
+  width: 100%;
+  margin-top: 14px;
 }
 
 .modal-header {
@@ -956,7 +1008,8 @@ button:disabled {
 /* ─────────── Sig library popover ─────────── */
 
 #sig-popover,
-#theme-popover {
+#theme-popover,
+#about-popover {
   position: fixed;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -971,11 +1024,33 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  -webkit-app-region: no-drag;
 }
 
 #sig-popover[hidden],
-#theme-popover[hidden] {
+#theme-popover[hidden],
+#about-popover[hidden] {
   display: none;
+}
+
+#about-popover {
+  min-width: 168px;
+  max-width: 240px;
+}
+
+.about-menu-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.about-menu-item:hover {
+  background: var(--hover);
 }
 
 #theme-popover {
