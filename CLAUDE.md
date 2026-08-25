@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm start          # launch the Electron app (alias: npm run dev)
-npm run build      # package with electron-builder → dist/
+npm run build      # package with electron-builder --config .electron-builder.yml → dist/
 ```
 
 There is no test suite and no linter configured.
@@ -23,9 +23,11 @@ This is a vanilla-JS Electron desktop app with no bundler and no frontend framew
 
 ### Process boundary
 
-**Main process** (`electron/main.js`) owns all native OS access: file open/save dialogs, filesystem reads/writes, right-click context menus, and persistent settings via `electron-store`. It exposes exactly seven IPC handlers.
+**Main process** (`electron/main.js`) owns all native OS access: file open/save dialogs, filesystem reads/writes, right-click context menus, persistent settings via `electron-store`, and OS-level "open this PDF". It exposes seven invoke handlers (`open-file`, `open-file-bytes`, `save-file`, `save-file-as`, `show-context-menu`, `store-get`, `store-set`) plus a one-way `open-path` event to the renderer.
 
-**Preload** (`electron/preload.js`) bridges them into `window.electronAPI` via `contextBridge` so the renderer can never touch Node.
+Windows Default Apps launches a new process with the PDF as an argv entry (`[exe, file.pdf]` packaged, `[electron, ., file.pdf]` in dev). macOS uses the `open-file` event, which can fire before `ready`. The path is queued until `did-finish-load`, then sent to the renderer. There is no single-instance lock — each launch gets its own window.
+
+**Preload** (`electron/preload.js`) bridges the invoke handlers into `window.electronAPI` via `contextBridge` so the renderer can never touch Node, and buffers `open-path` until `onOpenPath` is registered.
 
 ### Renderer architecture
 
@@ -60,9 +62,9 @@ The preview pane (`#preview-pane`) is a continuous vertical stack of `.preview-p
 | File | Role |
 |------|------|
 | `src/state.js` | Central store, dispatch, pub/sub, undo/redo, page ids, signature remapping |
-| `src/main.js` | Boot, render loop, toast, error modal, unsaved `beforeunload` |
+| `src/main.js` | Boot, render loop, toast, error modal, unsaved `beforeunload`, OS file-open hookup |
 | `src/renderer.js` | pdf.js wrapper — load/clear sources, page fetch, blank-page helper |
-| `src/pdf-engine.js` | pdf-lib wrapper — open, save, saveAs, close, `buildOutputDoc` |
+| `src/pdf-engine.js` | pdf-lib wrapper — open, save, saveAs, close, OS `openPath`, `buildOutputDoc` |
 | `src/toolbar.js` | Toolbar DOM, button wiring, zoom, add/insert/delete/rotate |
 | `src/zoom.js` | Shared zoom step list (50–200%) and `snapZoom()` used by toolbar and wheel zoom |
 | `src/sidebar.js` | Thumbnail list, drag-to-reorder, click selection, context menu |
@@ -84,4 +86,4 @@ Design notes (not implemented):
 
 ### Build output
 
-`electron-builder` config is in `.electron-builder.yml`. Targets: NSIS (Windows), DMG (macOS), AppImage (Linux). Built app lands in `dist/`.
+`electron-builder` config is in `.electron-builder.yml` (file list, icons, NSIS names, and a `.pdf` `fileAssociations` entry). `npm run build` must pass `--config .electron-builder.yml` because `package.json` has an empty `"build": {}` that electron-builder would otherwise treat as the whole config. Targets: NSIS (Windows), DMG (macOS), AppImage (Linux). Built app lands in `dist/`.
