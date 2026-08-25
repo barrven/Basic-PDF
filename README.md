@@ -9,6 +9,7 @@ A lightweight desktop PDF editor built with Electron — no bundler, no frontend
 - Continuous-scroll preview of all pages (fit-to-width or stepped zoom 50–200%)
 - Zoom the preview with the toolbar or Ctrl/Cmd+mouse wheel (around the cursor)
 - Select and copy text from pages
+- Highlight selected text (Ctrl/Cmd+H) or redact it; both are written on save
 - Find in document (Ctrl/Cmd+F) with match count, next/previous, and on-page highlights
 - Reorder pages by dragging thumbnails
 - Rotate, insert, duplicate, and delete pages

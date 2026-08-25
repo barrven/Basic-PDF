@@ -6,6 +6,7 @@ import { textSelectionIsActive, textSelectionIsNonCollapsed, selectAllTextInActi
 import { openFindBar, closeFindBar, isFindBarOpen } from './search.js'
 import { closeThemePopover, isThemePopoverOpen } from './theme.js'
 import { closeAboutMenu, closeAboutModal, isAboutMenuOpen, isAboutModalOpen } from './about.js'
+import { applyHighlightFromSelection, hideAnnotatePopover, isAnnotatePopoverOpen } from './annotate.js'
 
 export function initShortcuts() {
   document.addEventListener('keydown', onKeyDown)
@@ -71,8 +72,18 @@ async function onKeyDown(e) {
     dispatch({ type: 'REDO' })
     return
   }
+  if (mod && !e.shiftKey && (e.key === 'h' || e.key === 'H')) {
+    e.preventDefault()
+    if (!modalIsOpen()) applyHighlightFromSelection()
+    return
+  }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (modalIsOpen()) return
+    if (appState.selectedAnnotation) {
+      e.preventDefault()
+      dispatch({ type: 'DELETE_ANNOTATION', id: appState.selectedAnnotation })
+      return
+    }
     if (appState.selectedSig) {
       e.preventDefault()
       dispatch({ type: 'DELETE_SIGNATURE', id: appState.selectedSig })
@@ -85,6 +96,11 @@ async function onKeyDown(e) {
   }
   if (e.key === 'Escape') {
     e.preventDefault()
+    if (isAnnotatePopoverOpen()) {
+      hideAnnotatePopover()
+      window.getSelection()?.removeAllRanges()
+      return
+    }
     if (isThemePopoverOpen()) {
       closeThemePopover()
       return
@@ -103,6 +119,10 @@ async function onKeyDown(e) {
     }
     if (appState.selectedSig) {
       dispatch({ type: 'SET_SELECTED_SIG', id: null })
+      return
+    }
+    if (appState.selectedAnnotation) {
+      dispatch({ type: 'SET_SELECTED_ANNOTATION', id: null })
       return
     }
     if (modalIsOpen()) {

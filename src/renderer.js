@@ -109,3 +109,15 @@ export function visualPageSize(width, height, rotation) {
   if (rot === 90 || rot === 270) return { width: height, height: width }
   return { width, height }
 }
+
+export async function openIsolatedPdf(bytes) {
+  const copy = bytes.slice()
+  const loadingTask = pdfjsLib.getDocument({
+    data: copy,
+    cMapUrl: CMAP_URL,
+    cMapPacked: true,
+    standardFontDataUrl: STANDARD_FONT_DATA_URL,
+    useWorkerFetch: false,
+  })
+  return loadingTask.promise
+}

@@ -542,6 +542,7 @@ button:disabled {
 .preview-page {
   position: relative;
   flex-shrink: 0;
+  isolation: isolate;
 }
 
 .preview-page canvas {
@@ -648,6 +649,49 @@ button:disabled {
 }
 
 #preview-pane.is-placing .textLayer {
+  pointer-events: none;
+}
+
+.preview-page .annot-highlight-layer,
+.preview-page .annot-redact-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.preview-page .annot-highlight-layer {
+  z-index: 0;
+}
+
+.preview-page .annot-redact-layer {
+  z-index: 1;
+}
+
+.preview-page .annot-highlight-rect,
+.preview-page .annot-redact-rect {
+  position: absolute;
+  border-radius: 1px;
+}
+
+.preview-page .annot-highlight-rect {
+  background: #ffe566;
+  mix-blend-mode: multiply;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.preview-page .annot-redact-rect {
+  background: #000;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.preview-page .annot-redact-rect.annot-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+#preview-pane.is-placing .annot-redact-rect {
   pointer-events: none;
 }
 
@@ -1006,6 +1050,60 @@ button:disabled {
 }
 
 /* ─────────── Sig library popover ─────────── */
+
+#annotate-popover {
+  position: fixed;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  -webkit-app-region: no-drag;
+  user-select: none;
+}
+
+#annotate-popover[hidden] {
+  display: none;
+}
+
+#annotate-popover button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+#annotate-popover button:hover {
+  background: var(--hover);
+}
+
+.annot-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.annot-swatch-highlight {
+  background: #ffe566;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.annot-swatch-redact {
+  background: #111;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
 
 #sig-popover,
 #theme-popover,

@@ -3,6 +3,20 @@ const path = require('path')
 const fs = require('fs')
 const pkg = require('../package.json')
 
+// Chromium on Windows tries to rotate GPU shader caches on launch. A leftover
+// lock (previous instance, Explorer indexer, antivirus) logs
+// "Unable to move the cache: Access is denied" and
+// "Gpu Cache Creation failed: -2" even though the window still opens.
+// This app does not need a persistent GPU shader cache.
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
+  for (const dir of ['GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache']) {
+    try {
+      fs.rmSync(path.join(app.getPath('userData'), dir), { recursive: true, force: true })
+    } catch {}
+  }
+}
+
 let mainWindow = null
 let pendingOpenPath = null
 let store = null

@@ -95,7 +95,7 @@ Do **not** bind Delete to “remove the matched text from the PDF.”
 - **Not OCR.** Image-only scans and blank pages have nothing to find.
 - **Not in-place text editing.** Hits are display overlays, same as select.
 - **Not `PDFFindController` as-is.** Wrong document model (one file vs composed `appState.pages`).
-- **Not saved highlight annotations.** Yellow is a find-session overlay, not written by pdf-lib on save.
+- **Not saved highlight annotations.** Yellow find marks are a session overlay, not written by pdf-lib on save. Saved highlights/redactions are a separate feature (`feature-annotate.md`); find omits hits that overlap a redaction.
 
 CJK / unusual encodings use `cMapUrl` and `standardFontDataUrl` on `getDocument()` (see `feature-select-text.md`). Search quality tracks extract quality.
 
@@ -123,4 +123,5 @@ Canvas rasterization remains the bottleneck. Text extract and text-layer DOM fol
 ## See also
 
 - `feature-select-text.md` — text layer, copy, interaction with stamps and `Ctrl+A`
-- `todos.md` — remaining product ideas (annotations, settings, form filling)
+- `feature-annotate.md` — saved highlight and redaction; find skips redacted hits
+- `todos.md` — remaining product ideas (drawing/text entry, settings, form filling)

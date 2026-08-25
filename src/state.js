@@ -15,15 +15,15 @@ export function createPageEntry({ sourceId = null, originalIndex, rotation = 0 }
   }
 }
 
-function remapSignatures(oldPages, newPages, signatures) {
-  if (!oldPages.length || !signatures.length) return signatures
+function remapPageIndexed(oldPages, newPages, items) {
+  if (!oldPages.length || !items.length) return items
   const idToNewIndex = new Map()
   for (let i = 0; i < newPages.length; i++) {
     const id = newPages[i]?.id
     if (id) idToNewIndex.set(id, i)
   }
-  if (idToNewIndex.size === 0) return signatures
-  return signatures
+  if (idToNewIndex.size === 0) return items
+  return items
     .filter((s) => {
       const oldId = oldPages[s.pageIndex]?.id
       return oldId != null && idToNewIndex.has(oldId)
@@ -69,12 +69,14 @@ export const appState = {
   sources: {},
   pages: [],
   signatures: [],
+  annotations: [],
   selectedPages: new Set(),
   focusedPage: 0,
   zoom: null,
   dirty: false,
   placementSig: null,
   selectedSig: null,
+  selectedAnnotation: null,
   loading: false,
   history: {
     past: [],
@@ -105,6 +107,7 @@ function snapshot() {
   return deepClone({
     pages: appState.pages,
     signatures: appState.signatures,
+    annotations: appState.annotations,
   })
 }
 
@@ -124,11 +127,13 @@ export function dispatch(action) {
       appState.sources = {}
       appState.pages = action.pages
       appState.signatures = []
+      appState.annotations = []
       appState.selectedPages = action.pages.length > 0 ? new Set([0]) : new Set()
       appState.focusedPage = 0
       appState.dirty = false
       appState.placementSig = null
       appState.selectedSig = null
+      appState.selectedAnnotation = null
       appState.zoom = null
       appState.history.past = []
       appState.history.future = []
@@ -140,11 +145,13 @@ export function dispatch(action) {
       appState.sources = {}
       appState.pages = []
       appState.signatures = []
+      appState.annotations = []
       appState.selectedPages = new Set()
       appState.focusedPage = 0
       appState.dirty = false
       appState.placementSig = null
       appState.selectedSig = null
+      appState.selectedAnnotation = null
       appState.zoom = null
       appState.loading = false
       appState.history.past = []
@@ -164,11 +171,12 @@ export function dispatch(action) {
       break
     }
     case 'SHIFT_SIGNATURES_AFTER': {
-      appState.signatures = appState.signatures.map((s) =>
+      const shift = (s) =>
         s.pageIndex >= action.fromIndex
           ? { ...s, pageIndex: s.pageIndex + action.delta }
           : s
-      )
+      appState.signatures = appState.signatures.map(shift)
+      appState.annotations = appState.annotations.map(shift)
       break
     }
     case 'INSERT_PAGES': {
@@ -182,25 +190,33 @@ export function dispatch(action) {
         }
       }
       const oldPages = appState.pages
-      appState.signatures = remapSignatures(oldPages, action.pages, appState.signatures)
+      appState.signatures = remapPageIndexed(oldPages, action.pages, appState.signatures)
+      appState.annotations = remapPageIndexed(oldPages, action.pages, appState.annotations)
       appState.selectedPages = remapSelection(oldPages, action.pages, appState.selectedPages)
       appState.pages = action.pages
       appState.focusedPage =
         action.focusedPage != null
           ? action.focusedPage
           : remapFocusedPage(oldPages, action.pages, appState.focusedPage)
+      if (appState.selectedAnnotation && !appState.annotations.some((a) => a.id === appState.selectedAnnotation)) {
+        appState.selectedAnnotation = null
+      }
       appState.dirty = true
       break
     }
     case 'SET_PAGE_ORDER': {
       pushHistory()
       const oldPages = appState.pages
-      appState.signatures = remapSignatures(oldPages, action.pages, appState.signatures)
+      appState.signatures = remapPageIndexed(oldPages, action.pages, appState.signatures)
+      appState.annotations = remapPageIndexed(oldPages, action.pages, appState.annotations)
       appState.selectedPages = remapSelection(oldPages, action.pages, appState.selectedPages)
       appState.focusedPage = remapFocusedPage(oldPages, action.pages, appState.focusedPage)
       appState.pages = action.pages
       if (appState.selectedSig && !appState.signatures.some((s) => s.id === appState.selectedSig)) {
         appState.selectedSig = null
+      }
+      if (appState.selectedAnnotation && !appState.annotations.some((a) => a.id === appState.selectedAnnotation)) {
+        appState.selectedAnnotation = null
       }
       appState.dirty = true
       break
@@ -274,6 +290,33 @@ export function dispatch(action) {
     }
     case 'SET_SELECTED_SIG': {
       appState.selectedSig = action.id
+      if (action.id) appState.selectedAnnotation = null
+      break
+    }
+    case 'ADD_ANNOTATION': {
+      pushHistory()
+      appState.annotations = [...appState.annotations, action.annotation]
+      appState.dirty = true
+      break
+    }
+    case 'DELETE_ANNOTATION': {
+      pushHistory()
+      appState.annotations = appState.annotations.filter((a) => a.id !== action.id)
+      if (appState.selectedAnnotation === action.id) appState.selectedAnnotation = null
+      appState.dirty = true
+      break
+    }
+    case 'DELETE_ANNOTATIONS': {
+      pushHistory()
+      const ids = new Set(action.ids || [])
+      appState.annotations = appState.annotations.filter((a) => !ids.has(a.id))
+      if (ids.has(appState.selectedAnnotation)) appState.selectedAnnotation = null
+      appState.dirty = true
+      break
+    }
+    case 'SET_SELECTED_ANNOTATION': {
+      appState.selectedAnnotation = action.id
+      if (action.id) appState.selectedSig = null
       break
     }
     case 'SET_FILE_PATH': {
@@ -286,12 +329,14 @@ export function dispatch(action) {
       const prev = appState.history.past.pop()
       appState.pages = prev.pages
       appState.signatures = prev.signatures
+      appState.annotations = prev.annotations || []
       // Clear selections that may be invalid.
       appState.selectedPages = new Set()
       if (appState.focusedPage >= appState.pages.length) {
         appState.focusedPage = Math.max(0, appState.pages.length - 1)
       }
       appState.selectedSig = null
+      appState.selectedAnnotation = null
       appState.dirty = true
       break
     }
@@ -301,11 +346,13 @@ export function dispatch(action) {
       const next = appState.history.future.shift()
       appState.pages = next.pages
       appState.signatures = next.signatures
+      appState.annotations = next.annotations || []
       appState.selectedPages = new Set()
       if (appState.focusedPage >= appState.pages.length) {
         appState.focusedPage = Math.max(0, appState.pages.length - 1)
       }
       appState.selectedSig = null
+      appState.selectedAnnotation = null
       appState.dirty = true
       break
     }

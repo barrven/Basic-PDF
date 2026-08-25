@@ -1,8 +1,9 @@
 import { appState, dispatch, subscribe } from './state.js'
 import { initToolbar, updateToolbar, updatePageCounter, updateZoomLabel } from './toolbar.js'
 import { initSidebar, renderThumbnails, updateSelectionStyles, scrollFocusedIntoView } from './sidebar.js'
-import { initPreview, renderPreview, renderSignatureOverlays, scrollPreviewToFocused, whenPreviewIdle } from './preview.js'
+import { initPreview, renderPreview, renderSignatureOverlays, renderAnnotationOverlays, scrollPreviewToFocused, whenPreviewIdle } from './preview.js'
 import { initSignature } from './signature.js'
+import { initAnnotate } from './annotate.js'
 import { initShortcuts } from './shortcuts.js'
 import { initSearch, onSearchDocumentChanged } from './search.js'
 import { initOsFileOpen } from './pdf-engine.js'
@@ -32,7 +33,11 @@ export function updateLoadingOverlay() {
   if (workspace) workspace.setAttribute('aria-busy', appState.loading ? 'true' : 'false')
 }
 
-export async function withDocumentLoading(work) {
+export async function withDocumentLoading(work, message) {
+  const el = document.getElementById('loading-overlay')
+  const label = el?.querySelector('p')
+  const previous = label?.textContent
+  if (label && message) label.textContent = message
   dispatch({ type: 'SET_LOADING', loading: true })
   try {
     return await work()
@@ -42,6 +47,7 @@ export async function withDocumentLoading(work) {
     } catch (err) {
       console.error(err)
     }
+    if (label && previous != null) label.textContent = previous
     dispatch({ type: 'SET_LOADING', loading: false })
   }
 }
@@ -58,13 +64,16 @@ export function showErrorModal(message) {
 let prevState = {
   pagesRef: null,
   signaturesRef: null,
+  annotationsRef: null,
   selectedPagesRef: null,
   focusedPage: -1,
   zoom: 'init',
   dirty: null,
   filePath: undefined,
   selectedSig: undefined,
+  selectedAnnotation: undefined,
   pagesLength: -1,
+  redactCount: -1,
 }
 
 function basename(p) {
@@ -92,20 +101,26 @@ export function render() {
   const focusedChanged = prevState.focusedPage !== appState.focusedPage
   const zoomChanged = prevState.zoom !== appState.zoom
   const sigsChanged = prevState.signaturesRef !== appState.signatures
+  const annotsChanged = prevState.annotationsRef !== appState.annotations
   const selChanged = prevState.selectedPagesRef !== appState.selectedPages
   const dirtyChanged = prevState.dirty !== appState.dirty
   const fileChanged = prevState.filePath !== appState.filePath
   const selectedSigChanged = prevState.selectedSig !== appState.selectedSig
+  const selectedAnnotChanged = prevState.selectedAnnotation !== appState.selectedAnnotation
   const lengthChanged = prevState.pagesLength !== appState.pages.length
+  const redactCount = appState.annotations.filter((a) => a.type === 'redact').length
 
   if (pagesChanged || fileChanged) {
     renderThumbnails().catch((e) => console.error(e))
+  }
+  if (pagesChanged || fileChanged || redactCount !== prevState.redactCount) {
     onSearchDocumentChanged()
   }
   if (pagesChanged || zoomChanged || fileChanged) {
     renderPreview().catch((e) => console.error(e))
-  } else if (sigsChanged || selectedSigChanged) {
-    renderSignatureOverlays()
+  } else if (sigsChanged || selectedSigChanged || annotsChanged || selectedAnnotChanged) {
+    if (sigsChanged || selectedSigChanged) renderSignatureOverlays()
+    if (annotsChanged || selectedAnnotChanged) renderAnnotationOverlays()
   }
   if (focusedChanged && !pagesChanged && !zoomChanged && !fileChanged) {
     scrollPreviewToFocused()
@@ -132,13 +147,16 @@ export function render() {
   prevState = {
     pagesRef: appState.pages,
     signaturesRef: appState.signatures,
+    annotationsRef: appState.annotations,
     selectedPagesRef: appState.selectedPages,
     focusedPage: appState.focusedPage,
     zoom: appState.zoom,
     dirty: appState.dirty,
     filePath: appState.filePath,
     selectedSig: appState.selectedSig,
+    selectedAnnotation: appState.selectedAnnotation,
     pagesLength: appState.pages.length,
+    redactCount,
   }
 }
 
@@ -161,6 +179,7 @@ function init() {
   initSidebar()
   initPreview()
   initSignature()
+  initAnnotate()
   initSearch()
   initShortcuts()
 

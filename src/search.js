@@ -1,5 +1,6 @@
 import { appState, dispatch } from './state.js'
-import { getPageTextContent } from './renderer.js'
+import { getPage, getPageTextContent } from './renderer.js'
+import { filterHitsCoveredByRedactions } from './annotate.js'
 import {
   scrollPreviewToFocused,
   waitForTextLayer,
@@ -173,7 +174,13 @@ async function runSearch() {
     try {
       const textContent = await getPageTextContent(entry.sourceId, entry.originalIndex)
       if (gen !== searchGen) return
-      const hits = findHitsInItems(textContent.items || [], query, entry, i)
+      let hits = findHitsInItems(textContent.items || [], query, entry, i)
+      if (hits.length && appState.annotations.some((a) => a.type === 'redact' && a.pageIndex === i)) {
+        const page = await getPage(entry.sourceId, entry.originalIndex)
+        if (gen !== searchGen) return
+        const viewport = page.getViewport({ scale: 1, rotation: entry.rotation })
+        hits = filterHitsCoveredByRedactions(hits, textContent.items || [], viewport, i)
+      }
       if (hits.length) matches = matches.concat(hits)
     } catch (err) {
       console.error('find extract failed', err)

@@ -92,7 +92,7 @@ Zoom already rebuilds the whole preview stack, so the text layer rebuilds with t
 
 - **Not OCR.** A scanned page with no real text stream has nothing to select.
 - **Not in-place text editing.** Overlay + copy is a display feature; mutating the PDF is a document-model feature.
-- **Not highlight / redact as a saved annotation.** Find highlights are session-only (see `feature-search-text.md`).
+- Saved highlight / redact annotations are implemented — see `feature-annotate.md`. Find highlights remain session-only (see `feature-search-text.md`).
 - **Not cross-page selection.**
 
 ---
@@ -101,7 +101,6 @@ Zoom already rebuilds the whole preview stack, so the text layer rebuilds with t
 
 1. Cross-page selection via `TextLayerBuilder`.
 2. OCR for image-only scans.
-3. Saved highlight / redact annotations.
 
 Find-in-page (`Ctrl/Cmd+F`) is implemented on top of this layer — see `feature-search-text.md`.
 
@@ -110,4 +109,5 @@ Find-in-page (`Ctrl/Cmd+F`) is implemented on top of this layer — see `feature
 ## See also
 
 - `feature-search-text.md` — find bar, extract cache, on-page highlights
+- `feature-annotate.md` — saved highlight and redaction on this same text layer
 - `todos.md` — remaining product ideas (annotations, settings, form filling)

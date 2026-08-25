@@ -1,6 +1,8 @@
 # Todos
 
-- [ ] add markdown features: text entry, line drawing, text highlighting
+- [ ] add markdown features: text entry, line drawing
+- [x] add text highlighting
+- [x] add redaction
 - [ ] add gear icon in top right for application settings
 - [ ] add js form filling features
 
@@ -21,3 +23,5 @@
 - [x] add search feature with ctrl + f
 - [x] add zoom in out with ctrl + mouse scroll
 - [x] select and copy text from pages
+- [x] text highlighting
+- [x] redaction

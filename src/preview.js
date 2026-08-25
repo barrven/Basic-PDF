@@ -5,7 +5,7 @@ import { handlePlacementClick, handlePlacementMove, isPlacing, exitPlacementMode
 import { snapZoom } from './zoom.js'
 
 let lastRenderToken = 0
-let pageViews = [] // { index, el, canvas, textLayerEl, textLayer, overlay, scale, pdfWidth, pdfHeight, renderedToken }
+let pageViews = [] // { index, el, canvas, textLayerEl, textLayer, highlightLayer, redactLayer, overlay, scale, pdfWidth, pdfHeight, renderedToken }
 let pageObserver = null
 let scrollFocusRaf = 0
 let ignoreScrollSync = false
@@ -42,9 +42,13 @@ export function initPreview() {
       return
     }
     if (e.target.closest('.sig-overlay')) return
+    if (e.target.closest('.annot-redact-rect')) return
     if (clickFinishedTextDrag(e) || textSelectionIsNonCollapsed()) return
     if (appState.selectedSig) {
       dispatch({ type: 'SET_SELECTED_SIG', id: null })
+    }
+    if (appState.selectedAnnotation) {
+      dispatch({ type: 'SET_SELECTED_ANNOTATION', id: null })
     }
   })
 
@@ -55,6 +59,17 @@ export function initPreview() {
 
   pagesHost.addEventListener('click', (e) => {
     if (isPlacing()) return
+    const redact = e.target.closest('.annot-redact-rect')
+    if (redact) {
+      e.stopPropagation()
+      dispatch({ type: 'SET_SELECTED_ANNOTATION', id: redact.dataset.id })
+      const pageEl = redact.closest('.preview-page')
+      const idx = pageEl ? Number(pageEl.dataset.index) : -1
+      if (idx >= 0 && idx !== appState.focusedPage) {
+        dispatch({ type: 'SET_FOCUSED_PAGE', page: idx })
+      }
+      return
+    }
     const overlay = e.target.closest('.sig-overlay')
     if (!overlay) return
     e.stopPropagation()
@@ -332,9 +347,17 @@ async function renderPreviewInner() {
     canvas.style.height = pxH + 'px'
     el.appendChild(canvas)
 
+    const highlightLayer = document.createElement('div')
+    highlightLayer.className = 'annot-highlight-layer'
+    el.appendChild(highlightLayer)
+
     const textLayerEl = document.createElement('div')
     textLayerEl.className = 'textLayer'
     el.appendChild(textLayerEl)
+
+    const redactLayer = document.createElement('div')
+    redactLayer.className = 'annot-redact-layer'
+    el.appendChild(redactLayer)
 
     const overlay = document.createElement('div')
     overlay.className = 'signature-overlay-layer'
@@ -348,6 +371,8 @@ async function renderPreviewInner() {
       textLayerEl,
       textLayer: null,
       textLayerPainted: false,
+      highlightLayer,
+      redactLayer,
       overlay,
       scale,
       pdfWidth: size.width,
@@ -359,6 +384,7 @@ async function renderPreviewInner() {
 
   syncPlacementPointerEvents()
   renderSignatureOverlays()
+  renderAnnotationOverlays()
   const focused = pageViews[appState.focusedPage]
   if (focused) {
     renderPageCanvas(appState.focusedPage, myToken).catch((err) => console.error(err))
@@ -470,6 +496,7 @@ async function renderPageTextLayer(view, viewport, token, entry) {
     const end = document.createElement('div')
     end.className = 'endOfContent'
     layerEl.append(end)
+    applyRedactionTextLocks(view)
   } finally {
     if (token === lastRenderToken && pageViews[view.index] === view) {
       markTextLayerPainted(view)
@@ -477,13 +504,17 @@ async function renderPageTextLayer(view, viewport, token, entry) {
   }
 }
 
-function textLayerFromSelection() {
+export function textLayerFromSelection() {
   const sel = window.getSelection()
   if (!sel || sel.rangeCount === 0) return null
   const node = sel.anchorNode
   if (!node) return null
   const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement
   return el?.closest('.textLayer') || null
+}
+
+export function getPageViewByIndex(index) {
+  return pageViews[index] || null
 }
 
 export function textSelectionIsActive() {
@@ -699,6 +730,84 @@ export function renderSignatureOverlays() {
       }
       layer.appendChild(div)
     }
+  }
+}
+
+function annotRectsOverlap(a, b) {
+  return a.x < b.x + b.width && a.x + a.width > b.x &&
+    a.y < b.y + b.height && a.y + a.height > b.y
+}
+
+function applyRedactionTextLocks(view) {
+  const divs = view.textLayer?.textDivs
+  if (!divs) return
+  for (const span of divs) {
+    span.style.userSelect = ''
+    span.style.pointerEvents = ''
+    span.removeAttribute('aria-hidden')
+  }
+  const redacts = appState.annotations.filter((a) => a.type === 'redact' && a.pageIndex === view.index)
+  if (!redacts.length) return
+  const scale = view.scale || 1
+  const pageRect = view.el.getBoundingClientRect()
+  for (const span of divs) {
+    const sr = span.getBoundingClientRect()
+    if (sr.width < 1 || sr.height < 1) continue
+    const box = {
+      x: (sr.left - pageRect.left) / scale,
+      y: (sr.top - pageRect.top) / scale,
+      width: sr.width / scale,
+      height: sr.height / scale,
+    }
+    const covered = redacts.some((a) => a.rects.some((r) => annotRectsOverlap(r, box)))
+    if (covered) {
+      span.style.userSelect = 'none'
+      span.style.pointerEvents = 'none'
+      span.setAttribute('aria-hidden', 'true')
+    }
+  }
+}
+
+function paintAnnotRects(layer, annotations, className, scale) {
+  if (!layer) return
+  layer.replaceChildren()
+  for (const annot of annotations) {
+    for (const r of annot.rects) {
+      const div = document.createElement('div')
+      div.className = className
+      div.dataset.id = annot.id
+      div.style.left = r.x * scale + 'px'
+      div.style.top = r.y * scale + 'px'
+      div.style.width = r.width * scale + 'px'
+      div.style.height = r.height * scale + 'px'
+      if (annot.type === 'highlight' && annot.color) {
+        div.style.background = annot.color
+      }
+      if (annot.id === appState.selectedAnnotation) {
+        div.classList.add('annot-selected')
+      }
+      layer.appendChild(div)
+    }
+  }
+}
+
+export function renderAnnotationOverlays() {
+  for (const view of pageViews) {
+    const scale = view.scale || 1
+    const onPage = appState.annotations.filter((a) => a.pageIndex === view.index)
+    paintAnnotRects(
+      view.highlightLayer,
+      onPage.filter((a) => a.type === 'highlight'),
+      'annot-highlight-rect',
+      scale,
+    )
+    paintAnnotRects(
+      view.redactLayer,
+      onPage.filter((a) => a.type === 'redact'),
+      'annot-redact-rect',
+      scale,
+    )
+    if (view.textLayerPainted) applyRedactionTextLocks(view)
   }
 }
 
