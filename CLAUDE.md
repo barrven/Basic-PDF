@@ -104,7 +104,11 @@ As-built notes (these features are implemented):
 - `feature-search-text.md` — Ctrl/Cmd+F find bar on that same text layer and extract cache
 - `feature-annotate.md` — saved highlight and redaction on that same text layer
 
-Open product ideas (not designed, not implemented) live in `todos.md`: annotation-style drawing/text entry, a settings gear, form filling.
+Design notes (not implemented):
+
+- `feature-forms-plan.md` — implementation plan for AcroForm field filling (the `todos.md` "add js form filling features" item)
+
+Open product ideas (not designed, not implemented) live in `todos.md`: annotation-style drawing/text entry, a settings gear.
 
 ### Build output
 
