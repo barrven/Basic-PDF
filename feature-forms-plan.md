@@ -109,10 +109,14 @@ for (const [key, value] of Object.entries(appState.fieldValues)) {
 
 **Appearance streams:** pdf-lib regenerates a field's visual appearance when you call `setText()`/`select()`, which requires an embedded font. `form.updateFieldAppearances()` (called implicitly by the setters) defaults to Helvetica; if the field's original appearance used an embedded/non-standard font, the regenerated glyph rendering may not match the source PDF exactly. This is a known pdf-lib limitation, not something to solve here — flag it to the user only if it becomes a real complaint (e.g. via a toast on fields where the DA/font isn't a standard 14 font), don't build speculative handling.
 
-**Interaction with redaction:** redaction is *not* a rasterize-the-whole-page operation any more — `redactPageContent()` (`src/redact-content.js`) rewrites the page's content stream to drop only the glyphs whose boxes overlap a redaction rect, and the page stays vector/text otherwise. `buildOutputDoc()` only falls back to `rasterizeRedactedPage()` if that content-stream rewrite throws. Two consequences for forms, neither of which is the flattening concern an earlier draft of this section assumed:
+**Interaction with redaction:** in `buildOutputDoc()`, any redaction on a page currently makes `canFlatten` true for that whole page, and the page is rasterized wholesale — `rasterizeRedactedPage()` renders it to a PNG and `newDoc.addPage([w, h])` + `drawImage()` builds a brand-new page object from that image. The source page's original content, including its AcroForm widget annotations, is not carried onto that new page at all. So a redaction *anywhere* on a page — even far from any field — silently drops every form field on that page from the saved output, along with whatever the user typed into them. This is a **page-level, all-or-nothing loss**, not a rect-overlap one: a fix that only hides/disables the widget under the redacted area (the pattern `applyRedactionTextLocks()` uses for text, useful for live preview UX — see §3/§8) does not prevent the save-time data loss, since flattening still drops every other field on that same page.
 
-- **Common case (content-stream rewrite succeeds).** Form field widgets are AcroForm annotations, not glyphs painted by the page's content stream, so `redactPageContent()` never touches them — a redaction elsewhere on the page has no effect on field values or rendering. But if a redaction rect *overlaps a field widget's own area*, the widget (and whatever the user typed into it) would sit visually on top of the opaque black box the redaction draws, defeating the redaction. This app already solves the equivalent problem for text (`applyRedactionTextLocks()` in `src/preview.js` disables `pointer-events`/`user-select` and hides selected-text spans under a redaction) — do the same for the form layer: when laying out `.annot-form-layer`, skip rendering (or force-hide) any widget whose rect overlaps a redaction annotation, the same overlap test `annotRectsOverlap()` already provides.
-- **Rare fallback case (content-stream rewrite fails → rasterize).** `rasterizeRedactedPage()` paints from a live pdf.js render and does not currently know about form field values at all (it predates this feature). If forms ship before this fallback is form-aware, a page that hits the fallback *and* has fields would silently lose those field values in the rasterized output. Low priority given how rare the fallback is meant to be, but worth a `console.error`/toast if detected, so it's not a silent data loss.
+Options for save-time, roughly in order of effort:
+1. **Refuse to flatten a page that has form fields.** Skip the `canFlatten` path for such pages and fall back to the existing catch-path behavior (`drawAnnotRectsOnPage()` draws an opaque box over the redaction rect instead of rasterizing). Cheapest, but the redacted text stays extractable from the content stream — which defeats the purpose of redaction. Only acceptable as an explicit, disclosed tradeoff (e.g. a save-time warning), not silently.
+2. **Re-author the widgets onto the rasterized page.** After building the new image-backed page, re-create each field's widget annotation on it (position, appearance, value) and re-associate it with `newDoc`'s AcroForm. Preserves both redaction and form data, but is real work — essentially reimplementing per-field annotation placement independent of `copyPages()`.
+3. **Treat "redaction + form fields on the same page" as unsupported for v1**: detect the combination and block save (or block the redaction) with a clear message, rather than silently losing data. Recommended starting point — see §9 phasing.
+
+Whichever is chosen, this must not ship silently: a page that has both a redaction and one or more form fields either needs an explicit warning or a blocked save, never a quiet drop of field values.
 
 **Flatten-on-save option:** many form-filling tools offer "flatten form" (bake values as static content, remove interactivity) as an explicit save option. `form.flatten()` in pdf-lib does this in one call. Worth a checkbox in the save flow eventually, but not required for a first version — leave fields live/editable by default, matching how other PDF viewers behave after filling.
 
@@ -134,8 +138,8 @@ for (const [key, value] of Object.entries(appState.fieldValues)) {
 |------|--------|
 | `src/state.js` | `formFields`, `fieldValues` on `appState`; `SET_FORM_FIELDS`, `SET_FIELD_VALUE` actions; include `fieldValues` in `snapshot()`/`UNDO`/`REDO` |
 | `src/renderer.js` | expose `getFieldObjects()` lookup per source (mirrors existing `getPageTextContent` cache) |
-| `src/pdf-engine.js` | detect forms/XFA on `loadFromBytes()` and `INSERT_PAGES`; write field values in `buildOutputDoc()`; optionally make the `rasterizeRedactedPage()` fallback form-aware |
-| `src/preview.js` | new `.annot-form-layer` per page, built from pdf.js `AnnotationLayer` in `renderPageCanvas()`; hide/disable widgets overlapping a redaction, mirroring `applyRedactionTextLocks()` |
+| `src/pdf-engine.js` | detect forms/XFA on `loadFromBytes()` and `INSERT_PAGES`; write field values in `buildOutputDoc()`; guard the redaction flatten path against pages that carry form fields (§6) |
+| `src/preview.js` | new `.annot-form-layer` per page, built from pdf.js `AnnotationLayer` in `renderPageCanvas()`; for live-editing UX, hide/disable widgets overlapping a redaction, mirroring `applyRedactionTextLocks()` (this is separate from — and does not by itself fix — the save-time page flatten issue in §6) |
 | `src/forms.js` *(new)* | owns field-change listeners → `SET_FIELD_VALUE` dispatch, any "Reset form" action, mirrors `src/annotate.js` / `src/signature.js` shape |
 | `src/main.js` | render-loop diff clause for `fieldValues` (dirty only, no restack) |
 | `src/style.css` | trimmed/retheme copy of pdf.js's `.annotationLayer` widget CSS |
@@ -147,7 +151,7 @@ for (const [key, value] of Object.entries(appState.fieldValues)) {
 
 1. Text fields + checkboxes + radio groups (the common case), no flatten option, no redaction interplay handled yet (warn/skip that combo).
 2. Dropdowns and listboxes.
-3. Redaction + form-field interplay: hide/disable widgets whose rects overlap a redaction (§6).
+3. Redaction + form-field interplay: block/warn on save for a page that has both (§6 option 3), plus hide/disable overlapping widgets in the live preview.
 4. Flatten-on-save checkbox.
 5. Everything in §7 stays explicitly unsupported unless a real need shows up.
 
