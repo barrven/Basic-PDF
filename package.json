@@ -10,7 +10,9 @@
     "start": "electron .",
     "dev": "electron .",
     "build": "electron-builder --config .electron-builder.yml",
-    "audit": "npm audit --audit-level=high"
+    "audit": "npm audit --audit-level=high",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "build": {},
   "dependencies": {
@@ -23,6 +25,7 @@
     "global-agent": "^4.1.7"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4",
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3"
   }

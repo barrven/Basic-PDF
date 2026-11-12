@@ -8,7 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm start          # launch the Electron app (alias: npm run dev)
 npm run build      # package with electron-builder --config .electron-builder.yml → dist/
 npm run audit      # npm audit --audit-level=high
+npm run tauri:dev    # launch the Tauri shell (src-tauri/); needs Rust + MSVC build tools
+npm run tauri:build  # NSIS installer → src-tauri/target/release/bundle/nsis/
 ```
+
+The Tauri shell in `src-tauri/` is an in-progress alternative to the Electron shell that runs the same renderer; see `src-tauri/README.md`.
 
 There is no test suite and no linter configured. `.github/workflows/security.yml` runs `npm audit --audit-level=high` on push, pull request, and weekly (Monday 08:00 UTC).
 

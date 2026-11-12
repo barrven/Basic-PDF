@@ -16,14 +16,16 @@ The Electron app is still the shipping build. Both shells live side by side.
 From the repo root:
 
 ```bash
-npx @tauri-apps/cli@2 dev
+npm run tauri:dev
 ```
 
 ```bash
-npx @tauri-apps/cli@2 build
+npm run tauri:build
 ```
 
-`build` writes the NSIS installer to `src-tauri/target/release/bundle/nsis/` (about 3.4 MiB).
+The Tauri CLI is a dev dependency (`@tauri-apps/cli`), so these need no separate install. `tauri:dev` holds the terminal while the app is open; Ctrl+C there closes the app.
+
+`tauri:build` writes the NSIS installer to `src-tauri/target/release/bundle/nsis/` (about 3.4 MiB).
 
 Both commands first run `scripts/assemble-frontend.mjs`. After editing anything in `src/` or `index.html`, re-run the command so the embedded copy is refreshed.
 
