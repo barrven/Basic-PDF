@@ -1,8 +1,8 @@
 # Implementation guide: cryptographic (digital) signatures
 
-**Status:** design/implementation guide only — nothing here is built. Written against `dev` as of "Keep highlighted text readable in the preview." (`3cce064`). Cross-check line numbers against current source before coding; they will drift, and the redaction implementation in particular is under active revision.
+**Status:** design/implementation guide only — nothing here is built. The renderer-side sections were written against an earlier revision ("Keep highlighted text readable in the preview.", `3cce064`); the shell-side sections were revised for the Tauri shell and have not been prototyped. Cross-check `file:line` references against current source before coding; they will drift. Crate names in §3 are candidates to evaluate, not tested choices.
 
-This describes how to add a real cryptographic signature (PAdES/PKCS#7, the kind Adobe Reader shows a blue ribbon for) on top of the existing signature *stamp* feature. It is a substantially bigger feature than it looks, because it touches process boundaries, save semantics, and PDF's byte-level signing format — not just UI. Read the whole thing before starting; the "gotchas" section exists because each one was a redesign, not a bug fix, when skipped.
+This describes how to add a real cryptographic signature (PAdES/PKCS#7, the kind Adobe Reader shows a blue ribbon for) on top of the existing signature *stamp* feature. It is a substantially bigger feature than it looks, because it touches the shell/renderer boundary, save semantics, and PDF's byte-level signing format — not just UI. Read the whole thing before starting; the "gotchas" section exists because each one was a redesign, not a bug fix, when skipped.
 
 ---
 
@@ -19,7 +19,7 @@ These are two different things that happen to look similar in the UI (a rectangl
 ## 2. Architectural facts that drive every decision below
 
 1. **pdf-lib cannot produce PDF signatures.** It has no `/ByteRange`, no CMS/PKCS#7, no incremental-update writer for this purpose. You need a second library purely for the signing step.
-2. **Signing needs Node crypto (or a big browser crypto polyfill).** The renderer runs with `contextIsolation: true`, `nodeIntegration: false` (`electron/main.js:181-185`) and a CSP that blocks arbitrary script/module loading (`index.html`). Private-key handling belongs in the **main process** regardless — you don't want a private key or PFX passphrase anywhere near a Chromium renderer that loads pdf.js-parsed PDF content. This means a new IPC surface, mirroring how `open-file`/`save-file` already cross that boundary.
+2. **Signing belongs in the shell, not the renderer.** The renderer is a WebView2 page with no filesystem or OS access beyond the commands the shell exposes (`src-tauri/src/lib.rs`, reached through `window.nativeAPI` in `src-tauri/src/bridge.js`), and a CSP that blocks arbitrary script loading (`index.html`). Private-key handling belongs in the **Rust shell** regardless — you don't want a private key or PFX passphrase held in a web page that also parses untrusted PDF content with pdf.js. This means new Tauri commands, mirroring how `read_file_bytes` / `save_file` already cross that boundary.
 3. **`buildOutputDoc()` is a full rebuild, not an incremental update.** Every save constructs `PDFDocument.create()` from scratch and copies pages in (`src/pdf-engine.js:226-318`). It does not carry over the source file's `AcroForm`, `/Sig` dictionaries, or any prior incremental-update history. Consequence: **opening an already-signed PDF in this app and saving it will silently drop the existing signature**, with no warning today. That has to be fixed as part of this feature (§8), not left as a surprise.
 4. **Signing is necessarily the last step before bytes hit disk.** The signed hash covers the exact byte range of the saved file. It must run after `buildOutputDoc()` → `newDoc.save()`, not before, and nothing may touch the returned bytes afterward except splicing the signature into the pre-sized placeholder (which is exactly what the signing library does).
 5. **The signature's byte range must be reserved before the hash is computed**, and its size can't change afterward without invalidating offsets. This is the part hand-rolling would get wrong — use a library that already does it (§3).
@@ -28,18 +28,30 @@ These are two different things that happen to look similar in the UI (a rectangl
 
 ## 3. Recommended dependencies
 
-```
-npm install @signpdf/signpdf @signpdf/placeholder-pdf-lib @signpdf/signer-p12 node-forge
-```
+The work splits in two: the renderer reserves the signature placeholder with pdf-lib, and the shell computes the signature in Rust.
 
-- **`@signpdf/signpdf`** — core: finds the `/ByteRange` placeholder in a PDF buffer, computes the digest, hands it to a signer, splices the result back in.
-- **`@signpdf/placeholder-pdf-lib`** — sibling package built specifically for pdf-lib interop (this app already depends on pdf-lib, so this is the natural fit over `@signpdf/placeholder-plain`, which works against raw already-serialized PDF bytes instead). Exposes `pdflibAddPlaceholder({ pdfDoc, ... })`, called on the in-memory `PDFDocument` *before* `.save()`. It adds the `AcroForm`, the `/Sig` field + widget annotation, and a placeholder `/Contents` hex string of reserved length.
-- **`@signpdf/signer-p12`** — wraps `node-forge` to build a detached CMS `SignedData` from a PKCS#12 (`.p12`/`.pfx`) bundle. Use this for both CA-issued and self-signed identities (a self-signed cert can still be packaged as PKCS#12).
-- **`node-forge`** — also used directly (not just via `signer-p12`) for: parsing a PFX to read the certificate's subject/expiry for display, and generating a self-signed cert + keypair when the user doesn't have one.
+### Renderer: the placeholder
 
-Confirm exact option names against the installed versions' TypeScript types before wiring this up — `pdflibAddPlaceholder`'s option set (reason/location/contactInfo/name/signatureLength/subFilter/widget rect) is what you need, but pin down the current signature from `node_modules/@signpdf/placeholder-pdf-lib` once it's installed rather than trusting any example verbatim, including this one. For PAdES-compliant output (recommended over the plain Adobe subfilter) pass the ETSI CAdES-detached subfilter option — the package exports a constant for it.
+The `@signpdf` packages are the reference implementation for this in JavaScript, and `@signpdf/placeholder-pdf-lib` does exactly the placeholder step for pdf-lib. They are CommonJS packages written for Node, and this renderer has no bundler and loads only ES modules listed in `COPIES` in `src-tauri/scripts/assemble-frontend.mjs`, so they cannot be imported as-is. Two options:
 
-Everything in this list runs in the **main process**. Do not add these to any renderer-loaded module path (the CSP's `script-src 'self'` plus no bundler means they wouldn't load in the renderer anyway without a lot of extra plumbing — which is one more reason to keep this server-side in Electron terms).
+- **Write a small local helper** (recommended), modelled on `@signpdf/placeholder-pdf-lib`. It adds, on the in-memory `PDFDocument` *before* `.save()`: the `AcroForm`, the `/Sig` field + widget annotation, a `/ByteRange` array with fixed-width placeholder values, and a `/Contents` hex string of reserved length. Read that package's source for the exact dictionary layout before writing it.
+- **Vendor an ES-module build** of the package and add it to `COPIES`. More moving parts for about sixty lines of logic.
+
+For PAdES-compliant output (recommended over the plain Adobe subfilter) use the `/SubFilter /ETSI.CAdES.detached` value.
+
+### Shell: the signature (Rust)
+
+Add to `src-tauri/Cargo.toml`. These are candidates from the RustCrypto family; confirm current versions, APIs and maintenance status before committing to them:
+
+- **PKCS#12 parsing** (`p12` or `pkcs12`) — read a `.p12`/`.pfx` bundle, validate its password, extract the key and certificate chain.
+- **X.509** (`x509-cert`) — read subject, issuer and expiry for display.
+- **CMS** (`cms`) with `rsa` and `sha2` — build the detached `SignedData` over the two byte ranges. For PAdES the signed attributes must include `signing-certificate-v2`; check that the chosen crate lets you add it.
+- **Self-signed generation** (`rcgen`) — keypair + certificate for users without an identity.
+- **Key storage** — see §4.
+
+The shell also has to do what `@signpdf/signpdf` does in JS: find the `/ByteRange` placeholder in the serialized bytes, write the real offsets into it without changing its length, hash everything outside `/Contents`, and write the hex-encoded CMS blob into `/Contents`, padded with zeros to the reserved length. This is plain byte manipulation, but the offsets must be exact; test it with §11 step 2.
+
+None of this runs in the renderer.
 
 ---
 
@@ -52,46 +64,54 @@ Users need an X.509 certificate + private key to sign with. Two paths:
 
 ### Storage
 
-Do **not** put the PFX bytes or password in `electron-store` (`src/store.js`) as-is — it's plaintext JSON on disk (see `src/store.js`'s existing use for the signature image library, which is fine for images but not for key material). Use Electron's `safeStorage` module (`safeStorage.encryptString` / `decryptString`), which is backed by DPAPI on Windows, Keychain on macOS, and libsecret on Linux. Store the encrypted blob's bytes in `electron-store` (or a dedicated file under `app.getPath('userData')`); decrypt only inside the main process, only at the moment of signing, and never send the decrypted bytes over IPC.
+Do **not** put the PFX bytes or password in the settings file (`basic-pdf.json`, reached through `store_get` / `store_set` and used by `src/store.js`) as-is — it's plaintext JSON on disk, which is fine for the signature image library but not for key material. Protect it with the OS: on Windows that is DPAPI (`CryptProtectData`, available through the `windows` crate) or the Credential Manager (the `keyring` crate wraps it, and Keychain / Secret Service on other platforms). Keep the protected blob either in the OS store itself or in a dedicated file in the app config folder (`app.path().app_config_dir()`); decrypt only inside the shell, only at the moment of signing, and never return the decrypted bytes from a command.
 
-Suggested shape for a stored identity record (main-process side only):
+Suggested shape for a stored identity record (shell side only):
 
-```js
+```json
 {
-  id: 'uuid',
-  label: 'Jane Doe (Acme Corp)',   // shown in UI, user-editable
-  subjectCN: 'Jane Doe',            // parsed from cert at import time, for display
-  issuerCN: 'Acme Corp CA',         // or 'Self-signed' 
-  notAfter: 1782000000000,          // expiry, to warn/block signing with an expired cert
-  encryptedPfx: <Buffer>,           // safeStorage.encryptString(base64 pfx) result
-  encryptedPassword: <Buffer>,      // safeStorage.encryptString(password) result
+  "id": "uuid",
+  "label": "Jane Doe (Acme Corp)",
+  "subjectCN": "Jane Doe",
+  "issuerCN": "Acme Corp CA",
+  "notAfter": 1782000000000,
+  "protectedPfx": "<base64 of the OS-protected PFX bytes>",
+  "protectedPassword": "<base64 of the OS-protected password>"
 }
 ```
 
-Never expose `encryptedPfx`/`encryptedPassword` (or their decrypted form) to the renderer. The renderer only ever sees `{ id, label, subjectCN, issuerCN, notAfter }`.
+`label` is shown in the UI and user-editable. `subjectCN`, `issuerCN` (or `Self-signed`) and `notAfter` are parsed from the certificate at import time, for display and to warn or block signing with an expired certificate.
 
-### New main-process IPC handlers (`electron/main.js`)
+Never expose `protectedPfx` / `protectedPassword` (or their decrypted form) to the renderer. The renderer only ever sees `{ id, label, subjectCN, issuerCN, notAfter }`.
 
-Mirrors the existing pattern (`ipcMain.handle('open-file', ...)` etc.):
+### New shell commands (`src-tauri/src/lib.rs`)
 
-- `import-identity` — opens a native file dialog filtered to `.p12`/`.pfx`, reads it, prompts for... actually the password can't come from a native dialog (Electron has none); have the renderer collect the password in a modal and pass it in, e.g. `importIdentity(pfxBytes, password, label)`. Main process parses with `node-forge` to validate the password and extract subject/issuer/expiry, encrypts with `safeStorage`, stores the record, and returns the display-safe subset.
-- `list-identities` — returns the display-safe array.
-- `remove-identity` — deletes a stored record.
-- `generate-self-signed-identity` — takes `{ commonName, label }`, generates an RSA keypair + self-signed X.509 cert with `node-forge`, packages as PKCS#12 (no password, or a random one that stays server-side), stores it the same way as an import, returns the display-safe record.
-- `sign-pdf` — see §6.
+Mirrors the existing pattern (`#[tauri::command]` functions registered in `generate_handler!`):
 
-### Preload additions (`electron/preload.js`)
+- `import_identity` — the renderer collects the password in a modal (there is no native password prompt) and calls `importIdentity(pfxBytes, password, label)`. The file itself can be picked with the existing dialog plugin, filtered to `.p12`/`.pfx`. The shell parses the bundle to validate the password and extract subject/issuer/expiry, protects it as above, stores the record, and returns the display-safe subset.
+- `list_identities` — returns the display-safe array.
+- `remove_identity` — deletes a stored record.
+- `generate_self_signed_identity` — takes `{ commonName, label }`, generates an RSA keypair + self-signed X.509 certificate, stores it the same way as an import (no password, or a random one that never leaves the shell), returns the display-safe record.
+- `sign_pdf` — see §6.
 
-Same shape as the existing bridge:
+### Bridge additions (`src-tauri/src/bridge.js`)
+
+Same shape as the existing `window.nativeAPI` entries. `sign_pdf` should carry the PDF as a raw body with its arguments in headers, the way `save_file` does, so the bytes are not JSON-encoded:
 
 ```js
-importIdentity:  (pfxBytes, password, label) => ipcRenderer.invoke('import-identity', pfxBytes, password, label),
-listIdentities:  ()                          => ipcRenderer.invoke('list-identities'),
-removeIdentity:  (id)                        => ipcRenderer.invoke('remove-identity', id),
-generateSelfSignedIdentity: (commonName, label) => ipcRenderer.invoke('generate-self-signed-identity', commonName, label),
-signPdf:         (pdfBytes, identityId, opts) => ipcRenderer.invoke('sign-pdf', pdfBytes, identityId, opts),
+importIdentity: (pfxBytes, password, label) =>
+  invoke('import_identity', { pfxBytes: Array.from(pfxBytes), password, label }),
+listIdentities: () => invoke('list_identities'),
+removeIdentity: (id) => invoke('remove_identity', { id }),
+generateSelfSignedIdentity: (commonName, label) =>
+  invoke('generate_self_signed_identity', { commonName, label }),
+signPdf: async (pdfBytes, identityId) =>
+  new Uint8Array(
+    await invoke('sign_pdf', toBytes(pdfBytes), { headers: { 'x-identity': header(identityId) } })
+  ),
 ```
 
+A PFX is a few kilobytes, so passing it as a JSON array is acceptable there.
 ---
 
 ## 5. Data model changes (renderer)
@@ -103,7 +123,7 @@ Extend a signature entry (`appState.signatures`, currently `{ id, pageIndex, x, 
 ```
 
 - `digital: true` marks this stamp as also being the appearance for a cryptographic signature.
-- `identityId` references a stored identity (from `list-identities`), resolved to a display label in the UI.
+- `identityId` references a stored identity (from `listIdentities()`), resolved to a display label in the UI.
 
 Keep it to **at most one digital signature per save** for v1 — reject placing a second `digital: true` stamp while one is already pending, with a toast explaining why (multi-signature PDFs need sequential incremental updates and per-field byte ranges; that's real added complexity, see §9). `ADD_SIGNATURE` / `DELETE_SIGNATURE` in `src/state.js` don't need structural changes, just carry the new fields through.
 
@@ -129,51 +149,56 @@ async function buildOutputBytes() {
   // serializing — this must happen before newDoc.save(), not after.
   const pdfPage = newDoc.getPage(digitalSig.pageIndex)
   const widgetRect = visualRectToUnrotated(pdfPage, digitalSig.x, digitalSig.y, digitalSig.width, digitalSig.height)
-  await pdflibAddPlaceholder({
+  await addSignaturePlaceholder({   // local helper, see §3
     pdfDoc: newDoc,
     reason: digitalSig.reason || '',
     contactInfo: digitalSig.contactInfo || '',
     name: digitalSig.signerLabel || '',
     location: digitalSig.location || '',
     // widget placement on digitalSig.pageIndex using widgetRect
-    // subFilter: SUBFILTER_ETSI_CADES_DETACHED, // for PAdES
+    // subFilter: 'ETSI.CAdES.detached', // for PAdES
   })
   const unsignedBytes = await newDoc.save()
 
-  // Main process holds the private key; renderer never sees it.
-  return await window.electronAPI.signPdf(unsignedBytes, digitalSig.identityId, {
-    reason: digitalSig.reason,
-    location: digitalSig.location,
-  })
+  // The shell holds the private key; the renderer never sees it.
+  return await window.nativeAPI.signPdf(unsignedBytes, digitalSig.identityId)
 }
 ```
 
-Then `saveDocument()` and `saveAs()` (`src/pdf-engine.js:320-380`) both call `buildOutputBytes()` instead of `newDoc.save()` directly. Both already route through `withDocumentLoading()` when `hasRedactions()` — extend that same "show the overlay" condition to `Boolean(pendingDigitalSignature())`, since signing (main-process crypto + IPC round-trip) is not instant and the UI should not look frozen.
+Then `saveDocument()` and `saveAs()` (`src/pdf-engine.js:320-380`) both call `buildOutputBytes()` instead of `newDoc.save()` directly. Both already route through `withDocumentLoading()` when `hasRedactions()` — extend that same "show the overlay" condition to `Boolean(pendingDigitalSignature())`, since signing (a round-trip to the shell plus the crypto there) is not instant and the UI should not look frozen.
 
-### Main-process `sign-pdf` handler
+### Shell `sign_pdf` command
 
-```js
-ipcMain.handle('sign-pdf', async (_event, pdfBytes, identityId, opts) => {
-  const record = getIdentityRecord(identityId)          // from wherever identities are stored
-  if (!record) throw new Error('Signing identity not found')
-  if (record.notAfter < Date.now()) throw new Error('Signing certificate has expired')
-  const pfxBase64 = safeStorage.decryptString(record.encryptedPfx)
-  const password = safeStorage.decryptString(record.encryptedPassword)
-  const signer = new P12Signer(Buffer.from(pfxBase64, 'base64'), { passphrase: password })
-  const signed = await signpdf.sign(Buffer.from(pdfBytes), signer)
-  return new Uint8Array(signed)
-})
+In outline (the crypto calls depend on the crates chosen in §3):
+
+```rust
+#[tauri::command]
+fn sign_pdf(app: AppHandle, request: Request<'_>) -> CmdResult<Response> {
+    let identity_id = header_value(&request, "x-identity")?;
+    let InvokeBody::Raw(pdf) = request.body() else {
+        return Err("sign_pdf expects a raw byte body".into());
+    };
+    let record = identity_record(&app, &identity_id).ok_or("Signing identity not found")?;
+    if record.not_after < now_millis() {
+        return Err("Signing certificate has expired".into());
+    }
+    let (pfx, password) = unprotect(&record)?;            // OS-protected -> plaintext, shell only
+    let mut out = pdf.clone();
+    let ranges = fix_byte_range(&mut out)?;               // write real offsets into /ByteRange
+    let cms = detached_signed_data(&pfx, &password, &out, &ranges)?;
+    write_contents(&mut out, &cms)?;                      // hex, zero-padded to the reserved length
+    Ok(Response::new(out))
+}
 ```
 
-Decrypted key material (`pfxBase64`, `password`, and everything `P12Signer` derives from them) should go out of scope as soon as `sign()` returns — don't cache it, don't log it, don't let it end up in a main-process error report.
-
+Decrypted key material (`pfx`, `password`, and everything derived from them) should go out of scope as soon as the signature is built — don't cache it, don't log it, and don't let it end up in an error string returned to the renderer.
 ---
 
 ## 7. UI changes
 
 ### Signature modal (`src/signature.js`, `#signature-modal`)
 
-Add a third tab or a post-draw/upload step: after the user confirms a drawn/uploaded signature (`onSignatureConfirmed()`, `src/signature.js:310-320`), if any identities exist (`window.electronAPI.listIdentities()`), show a checkbox: **"Also apply a cryptographic signature"**, with a dropdown of stored identities (label + subject CN) and optional reason/location text fields. If no identity exists yet, offer **"Add a signing identity"** inline (opens the import/self-signed flow) rather than dead-ending the user.
+Add a third tab or a post-draw/upload step: after the user confirms a drawn/uploaded signature (`onSignatureConfirmed()`, `src/signature.js:310-320`), if any identities exist (`window.nativeAPI.listIdentities()`), show a checkbox: **"Also apply a cryptographic signature"**, with a dropdown of stored identities (label + subject CN) and optional reason/location text fields. If no identity exists yet, offer **"Add a signing identity"** inline (opens the import/self-signed flow) rather than dead-ending the user.
 
 Placement (`enterPlacementMode()`, `handlePlacementClick()`, `src/signature.js:346-420`) doesn't need new mechanics — the digital-signature choice is metadata carried on the same `ADD_SIGNATURE` dispatch, just with `digital`/`identityId` set from the modal's new controls.
 
@@ -200,7 +225,7 @@ Because `buildOutputDoc()` rebuilds the document from scratch, **any edit-and-sa
 ## 9. Explicitly out of scope for a first cut (call these out, don't attempt silently)
 
 - **Multiple digital signatures in one document.** Real multi-signer workflows need sequential incremental updates (each signer's byte range must include all prior signatures unmodified). v1: one digital signature per save, and disable adding a second while one is pending.
-- **RFC 3161 timestamping (TSA).** Without it, a signature's long-term validity depends on the signing cert still being valid/unexpired at verification time. `@signpdf`'s signer interface can be extended for this, but it's a separate integration (a TSA client + embedding the timestamp token in the CMS) — track as a follow-up, not v1.
+- **RFC 3161 timestamping (TSA).** Without it, a signature's long-term validity depends on the signing cert still being valid/unexpired at verification time. It can be added later, but it's a separate integration (a TSA client + embedding the timestamp token in the CMS) — track as a follow-up, not v1.
 - **OCSP/CRL revocation checking.** Verification-side concern, not signing-side; out of scope.
 - **DocMDP ("certifying") signatures and lock-after-signing (form fill only / no changes allowed) transform params.** Meaningful once §8's rebuild-destroys-signature problem is actually solved with incremental updates; not worth doing on top of a full-rebuild save pipeline.
 - **PKCS#11 / hardware token signing (smart cards, YubiKey, etc.).** Different signer implementation entirely; note as a future identity-source option alongside PFX import.
@@ -209,13 +234,13 @@ Because `buildOutputDoc()` rebuilds the document from scratch, **any edit-and-sa
 
 ## 10. Security checklist
 
-- Private key material (PFX bytes, passphrase, anything `node-forge`/`P12Signer` derive from them) never crosses into the renderer process. Only display-safe identity metadata does.
-- PFX/passphrase at rest: `safeStorage.encryptString`, not plaintext `electron-store`.
-- Validate the PFX password at import time (catch node-forge's decryption error) and surface a clear "wrong password" error rather than storing something that will fail silently at sign time.
-- Check certificate expiry both at import (warn) and at sign time (`sign-pdf` handler, hard error if expired — a signature is worth less than nothing if it's plainly out of date).
+- Private key material (decrypted PFX bytes, the stored passphrase, anything derived from them) never crosses back into the renderer. Only display-safe identity metadata does. The one exception is import, where the renderer hands the PFX and the password the user just typed to the shell; clear those from renderer memory as soon as the call returns.
+- PFX/passphrase at rest: OS-protected (DPAPI or Credential Manager on Windows), not the plaintext settings file.
+- Validate the PFX password at import time (catch the PKCS#12 decryption error) and surface a clear "wrong password" error rather than storing something that will fail silently at sign time.
+- Check certificate expiry both at import (warn) and at sign time (`sign_pdf` command, hard error if expired — a signature is worth less than nothing if it's plainly out of date).
 - Self-signed identities: label them as such everywhere they appear in the UI (dropdown, popover, placed-stamp badge) so users don't mistake them for a trusted CA-issued signature.
-- Treat imported `.pfx`/`.p12` files like any other user-selected file path — no special validation beyond what `node-forge`'s own PKCS#12 parser already enforces; don't shell out, don't eval anything from the file.
-- Don't log signed/unsigned PDF bytes, PFX bytes, or passwords, even at debug level, in either process.
+- Treat imported `.pfx`/`.p12` files like any other user-selected file path — no special validation beyond what the PKCS#12 parser already enforces; don't shell out, and don't interpret anything from the file.
+- Don't log signed/unsigned PDF bytes, PFX bytes, or passwords, even at debug level, in the shell or the renderer.
 
 ---
 
@@ -226,14 +251,14 @@ There's no test suite in this repo (per `CLAUDE.md`), so verification here is ma
 1. Sign a document with a self-signed identity, open the output in Adobe Acrobat Reader (or `qpdf --check` / `pdfsig` from poppler-utils) — confirm it reports "signed" with a valid hash and an untrusted-signer warning (expected for self-signed).
 2. Sign, then modify a single byte of the saved file (e.g. append a space) and re-check with `pdfsig` — confirm it now reports the signature as invalid. This is the actual proof the byte-range/hash plumbing is correct, not just "a `/Sig` dict exists."
 3. Open a signed PDF from this app, make an unrelated edit (e.g. rotate a page), save, and confirm the §8 warning appeared and that the resulting file no longer validates as signed (expected until incremental-update preservation is built).
-4. Round-trip through the existing redaction/highlight/stamp code paths with a digital signature pending, to confirm `buildOutputDoc()` + the placeholder step don't interact badly (e.g. a redacted page that gets flattened to PNG, `rasterizeRedactedPage()`, still ends up as page N in `newDoc` before `pdflibAddPlaceholder()` looks up `newDoc.getPage(digitalSig.pageIndex)` — page indices must be assigned before the placeholder step runs, which the flow in §6 already respects since it comes after the full `buildOutputDoc()` loop).
-5. Expired-certificate path: import a deliberately expired test cert, confirm `sign-pdf` rejects it with a clear error instead of producing an unverifiable/garbage signature.
+4. Round-trip through the existing redaction/highlight/stamp code paths with a digital signature pending, to confirm `buildOutputDoc()` + the placeholder step don't interact badly (e.g. a redacted page that gets flattened to PNG, `rasterizeRedactedPage()`, still ends up as page N in `newDoc` before `addSignaturePlaceholder()` looks up `newDoc.getPage(digitalSig.pageIndex)` — page indices must be assigned before the placeholder step runs, which the flow in §6 already respects since it comes after the full `buildOutputDoc()` loop).
+5. Expired-certificate path: import a deliberately expired test cert, confirm `sign_pdf` rejects it with a clear error instead of producing an unverifiable/garbage signature.
 
 ---
 
 ## 12. Suggested phased rollout
 
-1. **Plumbing only, no UI:** `sign-pdf`/`list-identities`/`import-identity` IPC handlers, `safeStorage`-backed storage, a throwaway dev script that signs a fixed test PDF with a hardcoded self-signed identity. Verify with `pdfsig`/Acrobat before touching any renderer UI.
+1. **Plumbing only, no UI:** `sign_pdf` / `list_identities` / `import_identity` commands, OS-protected storage, and a throwaway dev test that signs a fixed test PDF with a hardcoded self-signed identity. Verify with `pdfsig`/Acrobat before touching any renderer UI.
 2. **Self-signed identity generation + import**, surfaced in the signature popover, with expiry/label display. No signing wired to save yet.
 3. **Save-flow integration** (§6): one digital signature per save, placed via the existing stamp-placement flow with the new modal checkbox.
 4. **§8's already-signed-PDF warning** — should land before or alongside step 3, not after, since step 3 is exactly what makes the silent-destruction problem live.

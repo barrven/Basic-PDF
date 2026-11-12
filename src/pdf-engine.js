@@ -21,7 +21,7 @@ export async function openFile() {
   try {
     if (appState.loading) return
     if (!confirmDiscardIfDirty()) return
-    const result = await window.electronAPI.openFile()
+    const result = await window.nativeAPI.openFile()
     if (!result) return
     const { path, buffer } = result
     await withDocumentLoading(() => loadFromBytes(path, buffer))
@@ -39,7 +39,7 @@ export async function openPath(filePath) {
     await withDocumentLoading(async () => {
       let buffer
       try {
-        buffer = await window.electronAPI.openFileBytes(filePath)
+        buffer = await window.nativeAPI.openFileBytes(filePath)
       } catch (err) {
         console.error(err)
         showErrorModal('Could not open this file. It may have been moved or deleted.')
@@ -53,8 +53,8 @@ export async function openPath(filePath) {
 }
 
 export function initOsFileOpen() {
-  if (!window.electronAPI?.onOpenPath) return
-  window.electronAPI.onOpenPath((filePath) => {
+  if (!window.nativeAPI?.onOpenPath) return
+  window.nativeAPI.onOpenPath((filePath) => {
     openPath(filePath)
   })
 }
@@ -90,7 +90,7 @@ export async function loadFromBytes(filePath, bytes) {
 async function getSourceBytes(sourceId) {
   if (sourceId === PRIMARY_SOURCE_ID) {
     if (appState.fileBytes) return appState.fileBytes
-    return await window.electronAPI.openFileBytes(appState.filePath)
+    return await window.nativeAPI.openFileBytes(appState.filePath)
   }
   const src = appState.sources[sourceId]
   if (!src) throw new Error(`Missing bytes for source ${sourceId}`)
@@ -316,7 +316,7 @@ export async function saveDocument(targetPath) {
   try {
     const newDoc = await buildOutputDoc()
     const bytes = await newDoc.save()
-    await window.electronAPI.saveFile(targetPath, bytes)
+    await window.nativeAPI.saveFile(targetPath, bytes)
     if (targetPath !== appState.filePath) {
       dispatch({ type: 'SET_FILE_PATH', path: targetPath })
     }
@@ -362,7 +362,7 @@ export async function saveAs() {
       ? await withDocumentLoading(build, 'Saving…')
       : await build()
     const defaultName = basename(appState.filePath) || 'document.pdf'
-    const newPath = await window.electronAPI.saveFileAs(bytes, defaultName)
+    const newPath = await window.nativeAPI.saveFileAs(bytes, defaultName)
     if (!newPath) return
     dispatch({ type: 'SET_FILE_PATH', path: newPath })
     dispatch({ type: 'SET_DIRTY', dirty: false })

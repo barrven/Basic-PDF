@@ -2,7 +2,7 @@
 //
 // The renderer has no bundler: it imports pdf.js and pdf-lib straight from
 // node_modules paths. Pointing Tauri at the repo root would embed all of
-// node_modules (Electron included), so this copies only what the renderer
+// node_modules (build tooling included), so this copies only what the renderer
 // loads. The Tauri CLI refuses a frontend folder that contains a directory
 // named node_modules, so the libraries land in vendor/ and the copied src/*.js
 // files have their '../node_modules/' specifiers rewritten to '../vendor/'.

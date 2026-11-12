@@ -222,7 +222,7 @@ async function onContextMenu(e) {
   if (idx === null) return
   e.preventDefault()
   rightClickIndex = idx
-  const choice = await window.electronAPI.showContextMenu([
+  const choice = await window.nativeAPI.showContextMenu([
     'Delete page',
     'Rotate left',
     'Rotate right',

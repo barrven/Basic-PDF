@@ -32,7 +32,7 @@ async function loadPdfSource(sourceId, bytes) {
     cMapUrl: CMAP_URL,
     cMapPacked: true,
     standardFontDataUrl: STANDARD_FONT_DATA_URL,
-    // Worker-side fetch of file:// CMaps/fonts is unreliable in Electron.
+    // Fetch CMaps and standard fonts on the main thread, not in the worker.
     useWorkerFetch: false,
   })
   const doc = await loadingTask.promise

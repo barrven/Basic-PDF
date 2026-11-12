@@ -1,7 +1,8 @@
-//! Tauri shell for Basic PDF: the counterpart of `electron/main.js`.
+//! Tauri shell for Basic PDF. Owns all native OS access for the renderer
+//! (`index.html` + `src/*`): file dialogs, file I/O, context menus, settings,
+//! theme, and the window itself.
 //!
-//! The renderer (`index.html` + `src/*`) is shared with the Electron shell.
-//! `bridge.js` maps `window.electronAPI` onto the commands defined here.
+//! `bridge.js` maps `window.nativeAPI` onto the commands defined here.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -52,9 +53,10 @@ fn read_json_object(path: &Path) -> Option<Map<String, Value>> {
     }
 }
 
-/// First run of the Tauri build: carry over the Electron app's settings
-/// (signature library, theme, last folder) from `%APPDATA%/Basic PDF`.
-fn import_electron_store(app: &AppHandle) -> Option<Map<String, Value>> {
+/// First run only: carry over settings (signature library, theme, last
+/// folder) written by Basic PDF 1.0, which was Electron-based and kept them
+/// in `%APPDATA%/Basic PDF`. This is the only link left to that version.
+fn import_previous_store(app: &AppHandle) -> Option<Map<String, Value>> {
     let legacy = app.path().config_dir().ok()?.join("Basic PDF").join(STORE_FILE);
     read_json_object(&legacy)
 }
@@ -68,7 +70,7 @@ fn with_store<T>(
     if guard.is_none() {
         let path = store_path(app)?;
         let loaded = read_json_object(&path)
-            .or_else(|| import_electron_store(app))
+            .or_else(|| import_previous_store(app))
             .unwrap_or_default();
         *guard = Some(loaded);
     }
@@ -330,9 +332,8 @@ fn show_context_menu(
 
 // --------------------------------------------------------------- window ----
 
-// The window is frameless (the renderer draws its own title bar, as it does
-// under Electron's hidden title bar). bridge.js adds the caption buttons and
-// drag handling and calls these.
+// The window is frameless: the renderer draws its own title bar, and
+// bridge.js adds the caption buttons and drag handling, which call these.
 
 #[tauri::command]
 fn window_minimize(window: WebviewWindow) -> CmdResult<()> {
@@ -376,7 +377,7 @@ fn build_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .min_inner_size(800.0, 600.0)
         .theme(theme_for(preference))
         .decorations(false)
-        // window.electronAPI, the equivalent of the Electron preload script.
+        // Defines window.nativeAPI before any page script runs.
         .initialization_script(include_str!("bridge.js"))
         // Tauri's native file-drop handler swallows HTML5 drag-and-drop on
         // Windows, which thumbnail reordering and the signature upload use.

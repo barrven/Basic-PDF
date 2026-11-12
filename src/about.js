@@ -37,9 +37,9 @@ export function initAbout() {
 }
 
 async function loadAppInfo() {
-  if (!window.electronAPI?.getAppInfo) return
+  if (!window.nativeAPI?.getAppInfo) return
   try {
-    const info = await window.electronAPI.getAppInfo()
+    const info = await window.nativeAPI.getAppInfo()
     if (info && typeof info === 'object') {
       appInfo = { ...FALLBACK_INFO, ...info }
     }

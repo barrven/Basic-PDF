@@ -84,7 +84,7 @@ Zoom already rebuilds the whole preview stack, so the text layer rebuilds with t
 
 ## Encoding / CJK
 
-`getDocument()` sets `cMapUrl`, `cMapPacked: true`, and `standardFontDataUrl`. Worker-side fetch of those `file://` assets is disabled (`useWorkerFetch: false`) because it is unreliable in Electron.
+`getDocument()` sets `cMapUrl`, `cMapPacked: true`, and `standardFontDataUrl`. Worker-side fetch of those assets is disabled (`useWorkerFetch: false`), so they are fetched on the main thread.
 
 ---
 

@@ -178,7 +178,7 @@ async function onToolbarClick(e) {
 
 async function insertPdfFile() {
   if (appState.loading) return
-  const result = await window.electronAPI.openFile()
+  const result = await window.nativeAPI.openFile()
   if (!result) return
   try {
     await withDocumentLoading(() => insertPdfFromOpenResult(result))

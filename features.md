@@ -1,6 +1,6 @@
 # Basic PDF — Feature List
 
-Functional specification of a desktop PDF editor, extracted from the current implementation (Electron + vanilla JS + pdf.js + pdf-lib). Written to describe *what the app does*, independent of the current tech stack, for use as input when evaluating alternative languages, frameworks, or libraries.
+Functional specification of a desktop PDF editor, extracted from the current implementation (Tauri + vanilla JS + pdf.js + pdf-lib). Written to describe *what the app does*, independent of the current tech stack, for use as input when evaluating alternative languages, frameworks, or libraries.
 
 ## 1. File & document management
 

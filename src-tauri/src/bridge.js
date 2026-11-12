@@ -1,10 +1,8 @@
-// Tauri counterpart of electron/preload.js.
-//
-// Injected by the Rust shell before any page script runs. It exposes the same
-// window.electronAPI surface the renderer already uses, so src/* is shared
-// unmodified between the Electron and Tauri shells.
+// Injected by the Rust shell before any page script runs. Defines
+// window.nativeAPI, the renderer's only route to native OS access, on top of
+// the Tauri commands in lib.rs, and draws the window's caption buttons.
 ;(() => {
-  if (window.electronAPI) return
+  if (window.nativeAPI) return
 
   // window.__TAURI__ is injected separately; resolve it at call time.
   const invoke = (cmd, args, options) => window.__TAURI__.core.invoke(cmd, args, options)
@@ -17,7 +15,7 @@
   const themeListeners = []
   let themeSubscribed = false
 
-  window.electronAPI = {
+  window.nativeAPI = {
     openFile: async () => {
       const path = await invoke('pick_open_file')
       if (!path) return null
@@ -58,9 +56,9 @@
   }
 
   // ---- Frameless window chrome -------------------------------------------
-  // Electron draws native caption buttons over the HTML title bar
-  // (titleBarOverlay); Tauri has no Windows equivalent, so the buttons are
-  // built here inside #window-controls-spacer, which the layout reserves.
+  // Tauri cannot overlay native caption buttons on an HTML title bar on
+  // Windows, so the window is frameless and the buttons are built here inside
+  // #window-controls-spacer, which the layout reserves.
 
   const CAPTION_CSS = `
     #window-controls-spacer { display: flex; align-items: stretch; margin-right: -12px; }

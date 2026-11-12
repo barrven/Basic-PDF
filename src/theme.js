@@ -36,7 +36,7 @@ function applyThemeInfo(info) {
 export async function initTheme() {
   updateThemeButton()
   try {
-    const info = await window.electronAPI.getTheme()
+    const info = await window.nativeAPI.getTheme()
     applyThemeInfo(info)
   } catch (err) {
     console.error(err)
@@ -46,7 +46,7 @@ export async function initTheme() {
     })
   }
 
-  window.electronAPI.onThemeUpdated(applyThemeInfo)
+  window.nativeAPI.onThemeUpdated(applyThemeInfo)
   updateThemeButton()
 
   const pop = document.getElementById('theme-popover')
@@ -133,7 +133,7 @@ function onPopoverClick(e) {
 
 async function setPreference(preference) {
   try {
-    const info = await window.electronAPI.setTheme(preference)
+    const info = await window.nativeAPI.setTheme(preference)
     applyThemeInfo(info)
   } catch (err) {
     console.error(err)

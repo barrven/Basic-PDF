@@ -165,11 +165,11 @@ export function render() {
 let lastSentDirty = null
 
 function syncDirtyToMain() {
-  if (!window.electronAPI?.setDirty) return
+  if (!window.nativeAPI?.setDirty) return
   const dirty = !!appState.dirty
   if (dirty === lastSentDirty) return
   lastSentDirty = dirty
-  window.electronAPI.setDirty(dirty)
+  window.nativeAPI.setDirty(dirty)
 }
 
 function init() {

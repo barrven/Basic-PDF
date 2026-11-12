@@ -1,6 +1,6 @@
 # Basic PDF
 
-A lightweight desktop PDF editor built with Electron — no bundler, no frontend framework, just vanilla JS and native ES modules.
+A lightweight desktop PDF editor built with Tauri (Rust + the system WebView) — no bundler, no frontend framework, just vanilla JS and native ES modules.
 
 ## Features
 
@@ -31,14 +31,16 @@ npm install
 npm start       # launch the app (alias: npm run dev)
 ```
 
+Requires Rust (stable, MSVC target) and the Visual Studio C++ Build Tools; see `src-tauri/README.md`.
+
 ## Building
 
 ```bash
-npm run build   # package with electron-builder → dist/
+npm run build   # NSIS installer → src-tauri/target/release/bundle/nsis/
 npm run audit   # npm audit --audit-level=high
 ```
 
-Build targets and the `.pdf` file association are configured in `.electron-builder.yml`: NSIS (Windows), DMG (macOS), and AppImage (Linux). The installed app and Start menu shortcut are named **Basic PDF**. `npm run build` passes `--config .electron-builder.yml` so that file is used instead of the empty `"build"` field in `package.json`.
+The build target and the `.pdf` file association are configured in `src-tauri/tauri.conf.json`. Only the Windows NSIS installer is set up. The installed app and Start menu shortcut are named **Basic PDF**.
 
 CI runs `npm audit --audit-level=high` on push, pull request, and a weekly schedule (`.github/workflows/security.yml`).
 
@@ -66,10 +68,10 @@ Right-click a thumbnail for delete, rotate, duplicate, and insert blank page.
 
 ## Architecture
 
-The app is split across Electron's process boundary:
+The app is split between a Rust shell and a web renderer:
 
-- **Main process** (`electron/main.js`) owns native OS access — file dialogs, filesystem I/O, context menus, persistent settings (via `electron-store`), display theme, app info for the About dialog, and the PDF path the OS passes when the app is launched as the default reader. It also prompts on window close if the renderer has unsaved changes. Multiple instances are allowed.
-- **Preload** (`electron/preload.js`) bridges those handlers into `window.electronAPI` via `contextBridge`, so the renderer never touches Node directly.
+- **Shell** (`src-tauri/src/lib.rs`) owns native OS access — file dialogs, filesystem I/O, context menus, persistent settings (a JSON file in the app config folder), display theme, app info for the About dialog, and the PDF path the OS passes when the app is launched as the default reader. It also prompts on window close if the renderer has unsaved changes. Multiple instances are allowed.
+- **Bridge** (`src-tauri/src/bridge.js`) is injected before any page script and exposes those commands as `window.nativeAPI`, the renderer's only route to the OS. It also draws the window's minimize / maximize / close buttons.
 - **Renderer** (`src/`) uses two PDF libraries with distinct roles:
   - [pdf.js](https://mozilla.github.io/pdf.js/) renders pages to `<canvas>` for on-screen display and builds a text layer for select, copy, and find.
   - [pdf-lib](https://pdf-lib.js.org/) assembles the final output document at save time — copying pages, applying rotations, and embedding signatures.
