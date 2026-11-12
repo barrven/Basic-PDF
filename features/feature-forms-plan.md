@@ -1,6 +1,6 @@
 # Implementation guide: PDF form filling
 
-**Status:** not implemented. This is a design/implementation plan, not as-built documentation (compare `feature-annotate.md`, which describes shipped behavior). It covers the `todos.md` item "add js form filling features."
+**Status:** not implemented. This is a design/implementation plan, not as-built documentation (compare `feature-annotate.md`, which describes shipped behavior). It covers the `../todos.md` item "add js form filling features."
 
 Scope: **fill existing AcroForm fields** (text, checkbox, radio, dropdown, listbox) and save the values into the PDF. It does **not** cover authoring new form fields, XFA forms, PDF-embedded JavaScript (calculations/validation), or signature fields (a different concept from this app's existing image-stamp "Signatures" feature — naming collision to watch for in the UI).
 
@@ -62,6 +62,8 @@ await layer.render({ annotations, renderForms: true, ... })
 **CSS:** the app has no dependency on `web/pdf_viewer.css` (it hand-rolled `.textLayer` styling in `src/style.css` instead of using pdf.js's `web/pdf_viewer` bundle). Do the same here: copy just the `.annotationLayer` / `.textWidgetAnnotation` / `.buttonWidgetAnnotation` / `.choiceWidgetAnnotation` rules needed for text inputs, checkboxes, radios, and selects out of `node_modules/pdfjs-dist/web/pdf_viewer.css` into `src/style.css`, scoped under `.annot-form-layer`, and re-theme them to match this app's light/dark tokens (existing highlight/redact layers already do custom theming, e.g. `--render-error-bg`).
 
 **Zoom/rotation:** the layer is rebuilt on every `renderPageCanvas()` call the same as the text layer, so it already tracks `view.scale` and `entry.rotation` correctly — no extra bookkeeping needed there.
+
+**Freed pages:** `src/preview.js` releases the canvas and text layer of pages far from the viewport (`evictDistantPages()`) and re-renders them on return. The form layer must be cleared and rebuilt the same way, and each rebuilt widget must be seeded from `appState.fieldValues`, not from the PDF's stored value — otherwise what the user typed disappears when they scroll away and back. This is one more reason for option 2 in §4.
 
 **CSP:** no changes needed. `AnnotationLayer` renders DOM, not scripts; `script-src 'self' 'wasm-unsafe-eval'` already covers pdf.js's own code, and no field carries executable content this app will honor (see §7).
 
@@ -157,4 +159,4 @@ Whichever is chosen, this must not ship silently: a page that has both a redacti
 
 ## 10. Manual test plan
 
-No test suite exists in this repo (`CLAUDE.md`: "There is no test suite and no linter configured"), so verify by hand against a small set of sample PDFs covering: plain AcroForm with text/checkbox/radio/dropdown, a form with a non-embedded custom font (appearance regeneration check), an XFA form (should show the unsupported toast), a form PDF inserted into a primary document that also has forms with colliding field names, and a redacted page that also carries a field (§6 combo). Also re-verify existing find/highlight/redaction/signature flows still work on non-form PDFs, since `preview.js` and `pdf-engine.js` are both touched.
+No test suite exists in this repo (`../CLAUDE.md`: "There is no test suite and no linter configured"), so verify by hand against a small set of sample PDFs covering: plain AcroForm with text/checkbox/radio/dropdown, a form with a non-embedded custom font (appearance regeneration check), an XFA form (should show the unsupported toast), a form PDF inserted into a primary document that also has forms with colliding field names, and a redacted page that also carries a field (§6 combo). Also re-verify existing find/highlight/redaction/signature flows still work on non-form PDFs, since `preview.js` and `pdf-engine.js` are both touched.

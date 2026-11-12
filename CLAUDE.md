@@ -14,11 +14,13 @@ Building needs Rust (stable, `x86_64-pc-windows-msvc`) and the Visual Studio C++
 
 There is no test suite and no linter configured. `.github/workflows/security.yml` runs `npm audit --audit-level=high` on push, pull request, and weekly (Monday 08:00 UTC).
 
-### App name
+### App name and version
 
 The visible name is **Basic PDF** (`productName` in `package.json` and `src-tauri/tauri.conf.json`). That is what the window, installer, and Start menu shortcut use.
 
 `package.json` `"name"` must stay a valid npm package id (`basic-pdf`: lowercase, no spaces). Do not change `"name"` to the display name.
+
+The version (currently 3.1.0) is repeated in four places that must be bumped together: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, and the fallback in `src/about.js`. The About dialog shows the version the shell reports (`get_app_info`, from `tauri.conf.json`); the `src/about.js` value is used only if that call fails. The installer file name carries it too (`Basic PDF_3.1.0_x64-setup.exe`).
 
 ## Architecture
 
@@ -30,11 +32,11 @@ This is a Tauri desktop app (Rust shell, system WebView2) with a vanilla-JS rend
 
 Windows Default Apps launches a new process with the PDF as an argument. The shell keeps that path until the renderer registers `onOpenPath`, which pulls it with `take_pending_open_path`. There is no single-instance lock — each launch gets its own window.
 
-Hardening: the renderer has no Node or filesystem access, only the commands above; the capability file (`src-tauri/capabilities/default.json`) grants only `core:event:default`; `on_navigation` keeps the window on the app's own origin (`tauri.localhost`, plus the dev server's address under `tauri dev`). `index.html` ships a strict CSP (`default-src 'none'`, `script-src 'self' 'wasm-unsafe-eval'` for pdf.js WASM, `worker-src 'self' blob:` for the pdf.js worker).
+Hardening: the renderer has no Node or filesystem access, only the commands above; the capability file (`src-tauri/capabilities/default.json`) grants only `core:event:default`; `on_navigation` keeps the window on the app's own origin (`tauri.localhost`, plus the dev server's address under `tauri dev`). `index.html` ships a strict CSP (`default-src 'none'`, `script-src 'self' 'wasm-unsafe-eval'` for pdf.js WASM, `worker-src 'self' blob:` for the pdf.js worker). The only network access it allows is Google Fonts (`fonts.googleapis.com` / `fonts.gstatic.com`), which `index.html` loads for DM Sans and DM Mono; without a connection the UI falls back to system fonts.
 
 **Bridge** (`src-tauri/src/bridge.js`) is injected as an initialization script before any page script. It defines `window.nativeAPI` (`openFile`, `openFileBytes`, `saveFile`, `saveFileAs`, `showContextMenu`, `getStoreValue`, `setStoreValue`, `setDirty`, `getAppInfo`, `getTheme`, `setTheme`, `onThemeUpdated`, `onOpenPath`) on top of Tauri's `invoke`, which is the renderer's only route to the OS. It also builds the caption buttons inside `#window-controls-spacer` and handles title-bar drag and double-click-to-maximize, because the window is frameless.
 
-**Frontend assembly** (`src-tauri/scripts/assemble-frontend.mjs`) runs before `tauri dev` and `tauri build`. It copies `index.html`, `icon.png`, `src/`, and only the needed pdf.js / pdf-lib files into `src-tauri/frontend-dist/` (git-ignored), rewrites `../node_modules/` to `../vendor/` in the copied JS, and widens the copied CSP's `connect-src` for Tauri IPC. The sources are never modified. Edits to `src/` or `index.html` only reach the app after the command is re-run. If the renderer imports a new library file, add it to `COPIES` in that script.
+**Frontend assembly** (`src-tauri/scripts/assemble-frontend.mjs`) runs before `tauri dev` and `tauri build`. It copies `index.html`, `icon.png`, `src/`, and only the needed pdf.js / pdf-lib files into `src-tauri/frontend-dist/` (git-ignored), rewrites `../node_modules/` to `../vendor/` in the copied JS, and widens the copied CSP's `connect-src` for Tauri IPC. The sources are never modified. `tauri dev` serves that folder from a local dev server (normally `http://127.0.0.1:1430`), and a built app serves it from `tauri.localhost`. Edits to `src/` or `index.html` only reach the app after `npm start` is re-run; edits under `src-tauri/` rebuild and relaunch automatically while `npm start` is running. If the renderer imports a new library file, add it to `COPIES` in that script.
 
 ### Renderer architecture
 
@@ -46,7 +48,7 @@ Hardening: the renderer has no Node or filesystem access, only the commands abov
 - `signatures` / `selectedSig` changes only refresh stamp overlay DOM.
 - `annotations` / `selectedAnnotation` changes only refresh highlight/redact overlay DOM.
 
-**State** (`src/state.js`) is a single `appState` object mutated only through `dispatch(action)`. Subscribers are notified after every dispatch. Undo/redo snapshots only `pages`, `signatures`, and `annotations` (not zoom, selection, loading, etc.), capped at 50 entries. `loading` is set while a PDF is opened or inserted; a workspace overlay spinner stays up until the preview stack has been laid out.
+**State** (`src/state.js`) is a single `appState` object mutated only through `dispatch(action)`. Subscribers are notified after every dispatch. Undo/redo snapshots only `pages`, `signatures`, and `annotations` (not zoom, selection, loading, etc.), capped at 50 entries. `loading` is set while a PDF is opened or inserted; a workspace overlay spinner stays up until the preview stack has been laid out. The sidebar width is the one piece of UI state kept in `localStorage` (`sidebarWidth`) rather than in the shell's settings file.
 
 **Two-library PDF model**: The app uses two separate PDF libraries with distinct roles:
 - **pdf.js** (`src/renderer.js`) — renders pages to `<canvas>` for display, extracts `getTextContent()` (cached by `sourceId` + `originalIndex`), and supplies the viewport used by the text layer. Each loaded file is keyed by a `sourceId` in a module-level `Map`. Documents are opened with `cMapUrl` and `standardFontDataUrl` (`useWorkerFetch: false`, so they are fetched on the main thread).
@@ -56,7 +58,7 @@ Hardening: the renderer has no Node or filesystem access, only the commands abov
 
 The toolbar "Add page" button is commented out; blank pages are still available from the thumbnail context menu (`Insert blank page after`).
 
-**Signatures** are stored as `{ id, pageIndex, x, y, width, height, opacity, dataUrl }` in `appState.signatures`. Coordinates are in pdf.js visual top-left space for the page at its current rotation. `buildOutputDoc()` converts those into pdf-lib's unrotated media-box space (and rotates the image) when embedding. `SET_PAGE_ORDER` / `INSERT_PAGES` remap `pageIndex` by page `id` so stamps follow the page they were placed on. Placed stamps can be dragged and resized with eight handles (aspect ratio locked, min 20pt). The saved library (persisted in the shell's settings file) is capped at 20 entries in `src/store.js`; entries can be removed from the library popover. WebP uploads are rasterized to PNG before save.
+**Signatures** are stored as `{ id, pageIndex, x, y, width, height, opacity, dataUrl }` in `appState.signatures`. Coordinates are in pdf.js visual top-left space for the page at its current rotation. `buildOutputDoc()` converts those into pdf-lib's unrotated media-box space (and rotates the image) when embedding. `SET_PAGE_ORDER` / `INSERT_PAGES` remap `pageIndex` by page `id` so stamps follow the page they were placed on. Placed stamps can be dragged and resized with eight handles (aspect ratio locked, min 20pt). `opacity` is always 1: preview and save honor the field, but there is no control that changes it. The saved library (persisted in the shell's settings file) is capped at 20 entries in `src/store.js`; entries can be removed from the library popover. WebP uploads are rasterized to PNG before save.
 
 **Annotations** (`appState.annotations`) are `{ id, type, pageIndex, rects, color }` with `type` `'highlight'` or `'redact'`. Rects use the same visual top-left space as stamps. Select text to show `#annotate-popover` (`src/annotate.js`); `Ctrl/Cmd+H` highlights. Highlights sit under the text layer; redactions sit above it and block select/copy. On save, highlights are multiply-blend rectangles; a page with any redaction is rasterized (isolated pdf.js document at 2×, long edge capped at 3000px) so the covered glyphs are not in the output. `SET_PAGE_ORDER` / `INSERT_PAGES` remap annotation `pageIndex` by page `id`.
 
@@ -83,20 +85,23 @@ The text layer is built only for visible (or near-viewport) non-blank pages afte
 | File | Role |
 |------|------|
 | `src/state.js` | Central store, dispatch, pub/sub, undo/redo, page ids, signature/annotation remapping |
-| `src/main.js` | Boot, render loop, toast, error modal, document-loading overlay, dirty sync to main, OS file-open hookup |
-| `src/renderer.js` | pdf.js wrapper — load/clear sources, page fetch, text-content cache, CMap/standard-font URLs, blank-page helper, isolated docs for redaction flatten |
+| `src/main.js` | Boot, render loop, toast, error modal, document-loading overlay, dirty sync to the shell, OS file-open hookup |
+| `src/renderer.js` | pdf.js wrapper — load/clear sources, page fetch, text-content cache, CMap/standard-font URLs, blank-page helper, isolated docs for redaction flatten, the shared render queue (`scheduleRender`) |
 | `src/pdf-engine.js` | pdf-lib wrapper — open, save, saveAs, close, OS `openPath`, `buildOutputDoc` (highlights, redaction flatten, stamps) |
 | `src/toolbar.js` | Toolbar DOM, button wiring, zoom, insert/delete/rotate |
 | `src/zoom.js` | Shared zoom step list (50–200%) and `snapZoom()` used by toolbar and wheel zoom |
-| `src/sidebar.js` | Thumbnail list, drag-to-reorder, click selection, context menu |
-| `src/preview.js` | Continuous-scroll page stack, lazy canvas + text-layer render, signature/annotation overlays, Ctrl/Cmd+wheel zoom, find highlights |
+| `src/sidebar.js` | Thumbnail list (rendered lazily through the render queue), drag-to-reorder, click selection, context menu, resizable width |
+| `src/preview.js` | Continuous-scroll page stack, lazy canvas + text-layer render and freeing of distant pages, signature/annotation overlays, Ctrl/Cmd+wheel zoom, find highlights |
 | `src/search.js` | Find bar, incremental walker over composed pages, next/prev, highlight coordination |
 | `src/annotate.js` | Selection popover, highlight/redact create/remove, selection→rect conversion, find/redaction overlap |
 | `src/signature.js` | Signature modal (draw/upload), placement mode, library popover (including delete) |
 | `src/store.js` | Signature library persistence (through `window.nativeAPI` store calls) |
 | `src/theme.js` | Display mode (system / light / dark), title-bar popover, `data-theme` on `<html>` |
-| `src/about.js` | Title-bar app-name menu and About modal (`get-app-info`) |
+| `src/about.js` | Title-bar app-name menu and About modal (`nativeAPI.getAppInfo()`) |
 | `src/shortcuts.js` | Global keyboard shortcuts |
+| `src-tauri/src/lib.rs` | Rust shell: Tauri commands, settings file, context menu, theme, frameless-window commands, close prompt |
+| `src-tauri/src/bridge.js` | `window.nativeAPI` on top of Tauri `invoke`; caption buttons and title-bar drag |
+| `src-tauri/scripts/assemble-frontend.mjs` | Builds `src-tauri/frontend-dist/` before `tauri dev` / `tauri build` |
 
 ### Keyboard shortcuts (implemented in `src/shortcuts.js`; Ctrl/Cmd+wheel zoom is in `src/preview.js`)
 
@@ -104,15 +109,19 @@ The text layer is built only for visible (or near-viewport) non-blank pages afte
 
 ### Related feature notes
 
+All of these live in `features/`.
+
 As-built notes (these features are implemented):
 
-- `feature-select-text.md` — pdf.js text layer, select-and-copy, interaction with stamps and `Ctrl+A`
-- `feature-search-text.md` — Ctrl/Cmd+F find bar on that same text layer and extract cache
-- `feature-annotate.md` — saved highlight and redaction on that same text layer
+- `features/features.md` — functional specification of what the app does
+- `features/feature-select-text.md` — pdf.js text layer, select-and-copy, interaction with stamps and `Ctrl+A`
+- `features/feature-search-text.md` — Ctrl/Cmd+F find bar on that same text layer and extract cache
+- `features/feature-annotate.md` — saved highlight and redaction on that same text layer
 
 Design notes (not implemented):
 
-- `feature-forms-plan.md` — implementation plan for AcroForm field filling (the `todos.md` "add js form filling features" item)
+- `features/feature-forms-plan.md` — implementation plan for AcroForm field filling (the `todos.md` "add js form filling features" item)
+- `features/feature-digital-signature-guide.md` — design for cryptographic (PAdES) signatures, signing in the Rust shell; not prototyped
 
 Open product ideas (not designed, not implemented) live in `todos.md`: annotation-style drawing/text entry, a settings gear.
 

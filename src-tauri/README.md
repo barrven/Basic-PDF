@@ -23,9 +23,9 @@ npm run build
 
 These run `tauri dev` and `tauri build`. The Tauri CLI is a dev dependency (`@tauri-apps/cli`), so they need no separate install. `npm start` holds the terminal while the app is open; Ctrl+C there closes the app.
 
-`npm run build` writes the NSIS installer to `src-tauri/target/release/bundle/nsis/` (about 3.4 MiB).
+`npm run build` writes the NSIS installer to `src-tauri/target/release/bundle/nsis/` as `Basic PDF_<version>_x64-setup.exe` (about 3.4 MiB). The version comes from `tauri.conf.json`.
 
-Both commands first run `scripts/assemble-frontend.mjs`. After editing anything in `src/` or `index.html`, re-run the command so the embedded copy is refreshed.
+Both commands first run `scripts/assemble-frontend.mjs`. After editing anything in `src/` or `index.html`, re-run the command so the assembled copy is refreshed. Under `npm start` the CLI serves that copy from a local dev server (normally `http://127.0.0.1:1430`) and rebuilds the shell when a file under `src-tauri/` changes; a built app serves it from `tauri.localhost`. The window's navigation guard in `src/lib.rs` allows exactly those two origins.
 
 ## Layout
 
@@ -67,7 +67,7 @@ The originals are never modified. If the renderer starts importing another libra
 
 ## Behaviour notes
 
-- **Settings location.** Settings are stored in `%APPDATA%/com.barrven.basic-pdf/basic-pdf.json`. On first run, if that file does not exist, settings left by Basic PDF 1.0 in `%APPDATA%/Basic PDF/basic-pdf.json` are imported (signature library, theme, last folder).
+- **Settings location.** Settings are stored in `%APPDATA%/com.barrven.basic-pdf/basic-pdf.json`. On first run, if that file does not exist, settings left by the earlier Electron-based releases in `%APPDATA%/Basic PDF/basic-pdf.json` are imported (signature library, theme, last folder).
 - **Platforms.** Only the Windows NSIS installer is configured and tested. macOS and Linux bundles are not set up.
 - **Title bar.** The window is frameless and the caption buttons are HTML. Hovering the maximize button does not show the Windows 11 snap-layout flyout.
 - **File drops.** Tauri's native file-drop handler is disabled because it breaks HTML5 drag-and-drop on Windows (thumbnail reordering, signature upload). Dragging a PDF onto the window is therefore not handled by the shell.

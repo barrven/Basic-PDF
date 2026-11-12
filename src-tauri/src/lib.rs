@@ -54,7 +54,7 @@ fn read_json_object(path: &Path) -> Option<Map<String, Value>> {
 }
 
 /// First run only: carry over settings (signature library, theme, last
-/// folder) written by Basic PDF 1.0, which was Electron-based and kept them
+/// folder) written by the earlier Electron-based releases, which kept them
 /// in `%APPDATA%/Basic PDF`. This is the only link left to that version.
 fn import_previous_store(app: &AppHandle) -> Option<Map<String, Value>> {
     let legacy = app.path().config_dir().ok()?.join("Basic PDF").join(STORE_FILE);

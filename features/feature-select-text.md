@@ -11,8 +11,10 @@ Editing the PDF text itself is a different, much harder project and is not in sc
 The preview (`src/preview.js`) is a continuous vertical stack of `.preview-page` nodes. Each page is:
 
 1. A `<canvas>` rasterized by pdf.js
-2. A `.textLayer` div (pdf.js `TextLayer`) between the canvas and the stamps
-3. A `.signature-overlay-layer` on top for stamps
+2. `.annot-highlight-layer` (saved highlights, under the text)
+3. A `.textLayer` div (pdf.js `TextLayer`)
+4. `.annot-redact-layer` (redactions, above the text)
+5. A `.signature-overlay-layer` on top for stamps
 
 `src/renderer.js` loads documents with `cMapUrl` / `cMapPacked` and `standardFontDataUrl` (`useWorkerFetch: false`). `getPageTextContent(sourceId, originalIndex)` caches `page.getTextContent()` so the text layer and find share one extract.
 
@@ -43,7 +45,7 @@ v1 uses `TextLayer` only. Cross-page selection is not supported.
 
 Work is concentrated in `src/preview.js` plus CSS in `src/style.css` and the extract cache in `src/renderer.js`.
 
-1. Each `.preview-page` gets a `.textLayer` div **between** the canvas and the signature overlay.
+1. Each `.preview-page` gets a `.textLayer` div above the canvas and highlight layer, below the redaction and signature layers.
 2. After a page canvas paints in `renderPageCanvas()`, `renderPageTextLayer()` runs:
 
    ```js
@@ -57,6 +59,7 @@ Work is concentrated in `src/preview.js` plus CSS in `src/style.css` and the ext
    ```
 
 3. In-flight `TextLayer` work is cancelled when `lastRenderToken` changes (same token pattern as canvas rasterization).
+   Page renders are queued (`scheduleRender()` in `src/renderer.js`), so a page's text layer appears when its turn comes: nearest the focused page first, and not at all if the page scrolls away before then.
 4. Blank pages skip the layer and are marked painted immediately.
 5. `#preview-pane.is-placing .textLayer { pointer-events: none }` so stamps still land on the page.
 6. Signatures stay above the text layer. The overlay already uses `pointer-events: none` except on `.sig-overlay`, so stamps still win over text.
@@ -78,6 +81,7 @@ Zoom already rebuilds the whole preview stack, so the text layer rebuilds with t
 | `Delete` / `Backspace` deletes pages or a stamp | Skip page delete while a text selection is non-collapsed. Never delete glyphs from the PDF. |
 | Zoom rebuilds the preview DOM | Native selection dies on zoom. Accepted. |
 | Lazy `IntersectionObserver` render | Off-screen pages have no text layer yet. Cannot select across them until they paint. |
+| Distant pages are freed | A page far from the viewport loses its canvas and text layer and gets them back when scrolled to. A page that holds the current text selection is never freed. |
 | Selecting across two pages | Not implemented. `TextLayerBuilder` has a global listener if this is needed later. |
 
 ---
@@ -110,4 +114,4 @@ Find-in-page (`Ctrl/Cmd+F`) is implemented on top of this layer — see `feature
 
 - `feature-search-text.md` — find bar, extract cache, on-page highlights
 - `feature-annotate.md` — saved highlight and redaction on this same text layer
-- `todos.md` — remaining product ideas (annotations, settings, form filling)
+- `../todos.md` — remaining product ideas (annotations, settings, form filling)

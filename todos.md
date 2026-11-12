@@ -5,7 +5,7 @@
 - [x] add redaction
 - [ ] add gear icon in top right for application settings
 - [ ] add js form filling features
-- [ ] add cryptographic (digital) signatures — see `feature-digital-signature-guide.md`
+- [ ] add cryptographic (digital) signatures — see `features/feature-digital-signature-guide.md`
 
 
 # Completed

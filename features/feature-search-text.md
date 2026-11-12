@@ -70,7 +70,8 @@ Matching is on the concatenated item strings (no extra whitespace inserted betwe
 ## Show (text layer)
 
 - Next/prev: `SET_FOCUSED_PAGE` to the hit’s `pageIndex`, wait for preview idle, `scrollPreviewToFocused({ force: true })`, `waitForTextLayer`, then highlight and scroll the current match into view.
-- Highlight only on pages that already have a text layer (visible / near-viewport). Off-screen hits wait until `IntersectionObserver` paints them — same as canvases. A paint listener re-applies highlights when a layer finishes.
+- Highlight only on pages that already have a text layer (visible / near-viewport). Off-screen hits wait until `IntersectionObserver` paints them — same as canvases. A paint listener re-applies highlights when a layer finishes, which also covers a page that was freed while far from the viewport and rendered again.
+- `waitForTextLayer` forces the hit's page through the render queue even if it is not in view yet.
 - Current match vs other matches: CSS classes on existing spans; a span is split when a hit is a substring of one text item. The original string is kept in `data-find-text` so highlights can be restored without rebuilding the layer.
 - Thumbnails stay paint-only. No text layer, no highlights in the sidebar.
 
@@ -106,7 +107,8 @@ CJK / unusual encodings use `cMapUrl` and `standardFontDataUrl` on `getDocument(
 Canvas rasterization remains the bottleneck. Text extract and text-layer DOM follow the same lazy rules as canvases.
 
 - `getTextContent()` for visible pages runs with canvas paint; search fills the rest incrementally.
-- Text layers exist only for near-viewport pages. Search never builds a layer for every page.
+- Text layers exist only for near-viewport pages, and are released again for pages far from the viewport. Search never builds a layer for every page.
+- Rasterization goes through a priority queue (`scheduleRender()` in `src/renderer.js`): preview pages before thumbnails, nearest the focused page first.
 - Zoom rebuilds the preview stack; highlights are re-applied after the focused page paints.
 - Re-extract is not done on zoom, scroll, or reorder.
 
@@ -124,4 +126,4 @@ Canvas rasterization remains the bottleneck. Text extract and text-layer DOM fol
 
 - `feature-select-text.md` — text layer, copy, interaction with stamps and `Ctrl+A`
 - `feature-annotate.md` — saved highlight and redaction; find skips redacted hits
-- `todos.md` — remaining product ideas (drawing/text entry, settings, form filling)
+- `../todos.md` — remaining product ideas (drawing/text entry, settings, form filling)

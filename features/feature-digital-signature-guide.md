@@ -246,7 +246,7 @@ Because `buildOutputDoc()` rebuilds the document from scratch, **any edit-and-sa
 
 ## 11. Verification / testing plan
 
-There's no test suite in this repo (per `CLAUDE.md`), so verification here is manual:
+There's no test suite in this repo (per `../CLAUDE.md`), so verification here is manual:
 
 1. Sign a document with a self-signed identity, open the output in Adobe Acrobat Reader (or `qpdf --check` / `pdfsig` from poppler-utils) — confirm it reports "signed" with a valid hash and an untrusted-signer warning (expected for self-signed).
 2. Sign, then modify a single byte of the saved file (e.g. append a space) and re-check with `pdfsig` — confirm it now reports the signature as invalid. This is the actual proof the byte-range/hash plumbing is correct, not just "a `/Sig` dict exists."
@@ -269,4 +269,4 @@ There's no test suite in this repo (per `CLAUDE.md`), so verification here is ma
 ## See also
 
 - `feature-annotate.md` — the closest existing analog for "this changes what `buildOutputDoc()` produces, and has a raster-fallback path to reason about."
-- `todos.md` — open product ideas list; this guide's summary line lives there.
+- `../todos.md` — open product ideas list; this guide's summary line lives there.

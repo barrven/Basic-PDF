@@ -4,7 +4,7 @@ Functional specification of a desktop PDF editor, extracted from the current imp
 
 ## 1. File & document management
 
-- Open a PDF via file dialog, OS "open with" association (double-click), or drag-in.
+- Open a PDF via the file dialog or the OS "open with" association (double-click). Dragging a PDF onto the window does not open it.
 - Each file opens in its own top-level window; no single-instance restriction — multiple windows/files can be open at once.
 - Save in place, or Save As to a new path.
 - Remembers the last-used folder across Open and Save As dialogs; falls back to the OS default if that folder no longer exists.
@@ -17,7 +17,8 @@ Functional specification of a desktop PDF editor, extracted from the current imp
 - Continuous vertical scroll preview of every page in the document (not a single-page-at-a-time viewer).
 - Fit-to-width mode and stepped numeric zoom (e.g. 50%–200% in defined steps).
 - Zoom via toolbar controls and via Ctrl/Cmd+mouse-wheel, zooming around the cursor position with a scroll anchor so the point under the cursor stays fixed.
-- Lazy rendering: only visible/near-viewport pages are rasterized, for performance on large documents.
+- Lazy rendering: only visible/near-viewport pages are rasterized, nearest the current page first, and pages far from the viewport are released again, for speed and bounded memory on large documents.
+- Thumbnails are rendered on demand as they scroll into the sidebar, after the pages in view.
 - Thumbnail sidebar showing all pages; clicking a thumbnail scrolls the main preview to that page.
 - Keyboard/page navigation: next/previous page, page-up/page-down scroll by roughly one viewport.
 - A "focused page" concept — the page nearest the top of the viewport drives thumbnail highlighting and single-page context (e.g. rotate-current-page).
@@ -58,7 +59,6 @@ Functional specification of a desktop PDF editor, extracted from the current imp
 - Create a signature by freehand drawing (canvas/ink) or by uploading an image file (PNG, JPEG, WebP — WebP normalized to PNG on save).
 - Place a signature image anywhere on any page as a resizable, draggable overlay.
 - Drag to reposition; resize via corner/edge handles with aspect ratio locked; minimum size enforced.
-- Adjustable opacity per placed signature.
 - Reusable signature library: save signatures for reuse across documents, persisted between app sessions, capped at a maximum count (e.g. 20), with the ability to delete saved entries.
 - Placed signatures are embedded into the output PDF as images at save time, correctly transformed into the page's rotation/coordinate space.
 - Signature placements track page identity through reorder/insert/delete like other overlays.
@@ -66,11 +66,12 @@ Functional specification of a desktop PDF editor, extracted from the current imp
 ## 7. Appearance / theming
 
 - Light, dark, and "follow OS" display modes, switchable at runtime.
-- Whole-app theme (including title bar/window chrome where the OS allows it) updates immediately on change and on OS theme change when in "system" mode.
+- Whole-app theme, including the title bar (which the app draws itself), updates immediately on change and on OS theme change when in "system" mode.
 
 ## 8. Application chrome & info
 
-- Custom "About" dialog showing app name, version, and related build/runtime info.
+- Custom "About" dialog showing app name, version, description, author, license, and copyright.
+- Custom title bar with the app name, the open file's name (with an unsaved-changes marker), the display-mode control, and minimize / maximize / close buttons; drag it to move the window, double-click to maximize.
 - Right-click context menus for page/thumbnail actions (rotate, insert blank page, duplicate, delete, etc.).
 
 ## 9. Keyboard shortcuts
@@ -95,7 +96,8 @@ Not implemented in the current app; worth considering when exploring a new desig
 ## 12. Non-functional characteristics worth preserving
 
 - Runs as a desktop application (not just a viewer) with real filesystem read/write access to arbitrary local paths.
-- Works fully offline; no network dependency for core editing/saving.
+- Works offline: opening, editing and saving need no network. The only network request is for the UI fonts (Google Fonts); without a connection the UI uses system fonts.
+- Windows only today (NSIS installer, WebView2). No macOS or Linux build is configured.
 - Should perform acceptably on large multi-hundred-page PDFs (motivates lazy/virtualized rendering and incremental search rather than eager whole-document processing).
 - Two distinct concerns exist in the current design and probably should remain separable regardless of stack: (a) *rendering* pages to pixels for on-screen display + extracting text/positions for selection/search, and (b) *assembling/writing* the final output PDF (copying pages, applying rotation, drawing highlight boxes, flattening redacted pages to images, embedding signature images). A new implementation may unify these in one library/engine or keep them split — that tradeoff is one of the things worth evaluating.
 - Must not leak "deleted"/redacted content into the saved file even when the rendering layer that displays it is only visual (canvas-based).
