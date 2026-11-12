@@ -382,9 +382,19 @@ fn build_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         // Windows, which thumbnail reordering and the signature upload use.
         .disable_drag_drop_handler()
         // Stay on the bundled app; never navigate the window elsewhere.
-        .on_navigation(|url| {
-            matches!(url.scheme(), "tauri" | "about")
-                || url.host_str() == Some("tauri.localhost")
+        // Under `tauri dev` the CLI serves frontend-dist from a local dev
+        // server instead of tauri.localhost, so that origin is allowed too.
+        .on_navigation({
+            let dev_url = app.config().build.dev_url.clone();
+            move |url| {
+                matches!(url.scheme(), "tauri" | "about")
+                    || url.host_str() == Some("tauri.localhost")
+                    || dev_url.as_ref().is_some_and(|dev| {
+                        dev.scheme() == url.scheme()
+                            && dev.host_str() == url.host_str()
+                            && dev.port_or_known_default() == url.port_or_known_default()
+                    })
+            }
         })
         .build()
 }
