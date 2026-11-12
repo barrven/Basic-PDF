@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Basic PDF",
+  "version": "1.0.0",
+  "identifier": "com.barrven.basic-pdf",
+  "build": {
+    "frontendDist": "./frontend-dist",
+    "beforeDevCommand": "node src-tauri/scripts/assemble-frontend.mjs",
+    "beforeBuildCommand": "node src-tauri/scripts/assemble-frontend.mjs"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "fileAssociations": [
+      {
+        "ext": ["pdf"],
+        "name": "PDF Document",
+        "description": "PDF Document",
+        "mimeType": "application/pdf",
+        "role": "Editor"
+      }
+    ]
+  }
+}
