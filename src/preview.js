@@ -1,11 +1,13 @@
 import { TextLayer } from '../node_modules/pdfjs-dist/build/pdf.mjs'
 import { appState, dispatch } from './state.js'
-import { getPage, getPageTextContent, drawBlankPlaceholder, PAGE_SIZE_A4, visualPageSize } from './renderer.js'
+import { getPage, getPageTextContent, drawBlankPlaceholder, PAGE_SIZE_A4, visualPageSize, scheduleRender, RENDER_PRIORITY } from './renderer.js'
 import { handlePlacementClick, handlePlacementMove, isPlacing, exitPlacementMode } from './signature.js'
 import { snapZoom } from './zoom.js'
 
 let lastRenderToken = 0
-let pageViews = [] // { index, el, canvas, textLayerEl, textLayer, highlightLayer, redactLayer, overlay, scale, pdfWidth, pdfHeight, renderedToken }
+let pageViews = [] // { index, el, canvas, textLayerEl, textLayer, highlightLayer, redactLayer, overlay, scale, pdfWidth, pdfHeight, pxW, pxH, renderedToken, visible, queued }
+// Rasterized pages kept outside the observer margin before the farthest are freed.
+const MAX_OFFSCREEN_RENDERED = 12
 let pageObserver = null
 let scrollFocusRaf = 0
 let ignoreScrollSync = false
@@ -232,13 +234,65 @@ function ensureObserver() {
   if (pageObserver) pageObserver.disconnect()
   pageObserver = new IntersectionObserver((entries) => {
     for (const entry of entries) {
-      if (!entry.isIntersecting) continue
       const index = Number(entry.target.dataset.index)
-      renderPageCanvas(index, lastRenderToken).catch((err) => {
-        console.error('preview page render failed', err)
-      })
+      const view = pageViews[index]
+      if (view) view.visible = entry.isIntersecting
+      if (!entry.isIntersecting) continue
+      requestPageRender(index, lastRenderToken)
     }
   }, { root: pane, rootMargin: '800px 0px' })
+}
+
+// Queue a page for rasterization. Pages that scroll out of the observer margin
+// before their turn are skipped, unless `force` is set (find jumping to a page).
+function requestPageRender(index, token, { force = false } = {}) {
+  const view = pageViews[index]
+  if (!view || token !== lastRenderToken) return
+  if (view.renderedToken === token) return
+  if (force) view.forceRender = true
+  if (view.queued) return
+  view.queued = true
+  scheduleRender(
+    RENDER_PRIORITY.PREVIEW,
+    () => renderPageCanvas(index, token),
+    () => token === lastRenderToken && pageViews[index] === view && (view.visible || view.forceRender),
+    () => Math.abs(index - appState.focusedPage),
+  ).catch((err) => {
+    console.error('preview page render failed', err)
+    return true
+  }).then((ran) => {
+    view.queued = false
+    view.forceRender = false
+    // Skipped while off-screen, but scrolled back into view since.
+    if (!ran && view.visible && pageViews[index] === view) {
+      requestPageRender(index, lastRenderToken)
+    }
+  })
+}
+
+function viewHoldsSelection(view) {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false
+  return view.el.contains(sel.anchorNode) || view.el.contains(sel.focusNode)
+}
+
+// Free the canvas and text layer of pages far from the viewport, so memory does
+// not grow with every page the user scrolls past. They re-render on return.
+function evictDistantPages() {
+  const candidates = pageViews.filter((v) => v.renderedToken >= 0 && !v.visible && !v.queued)
+  if (candidates.length <= MAX_OFFSCREEN_RENDERED) return
+  const focus = appState.focusedPage
+  candidates.sort((a, b) => Math.abs(b.index - focus) - Math.abs(a.index - focus))
+  for (const view of candidates.slice(0, candidates.length - MAX_OFFSCREEN_RENDERED)) {
+    if (viewHoldsSelection(view)) continue
+    try { view.textLayer?.cancel() } catch {}
+    view.textLayer = null
+    view.textLayerEl.replaceChildren()
+    view.canvas.width = 0
+    view.canvas.height = 0
+    view.renderedToken = -1
+    view.textLayerPainted = false
+  }
 }
 
 export function whenPreviewIdle() {
@@ -281,9 +335,7 @@ export async function waitForTextLayer(pageIndex) {
       finish(view)
       return
     }
-    if (view) {
-      renderPageCanvas(pageIndex, lastRenderToken).catch((err) => console.error(err))
-    }
+    if (view) requestPageRender(pageIndex, lastRenderToken, { force: true })
     timer = setTimeout(() => finish(pageViews[pageIndex] || null), 10000)
   })
 }
@@ -340,9 +392,10 @@ async function renderPreviewInner() {
     el.style.width = pxW + 'px'
     el.style.height = pxH + 'px'
 
+    // The backing store is allocated when the page is rasterized, not here.
     const canvas = document.createElement('canvas')
-    canvas.width = pxW
-    canvas.height = pxH
+    canvas.width = 0
+    canvas.height = 0
     canvas.style.width = pxW + 'px'
     canvas.style.height = pxH + 'px'
     el.appendChild(canvas)
@@ -377,7 +430,12 @@ async function renderPreviewInner() {
       scale,
       pdfWidth: size.width,
       pdfHeight: size.height,
+      pxW,
+      pxH,
       renderedToken: -1,
+      visible: false,
+      queued: false,
+      forceRender: false,
     })
     pageObserver.observe(el)
   }
@@ -386,9 +444,7 @@ async function renderPreviewInner() {
   renderSignatureOverlays()
   renderAnnotationOverlays()
   const focused = pageViews[appState.focusedPage]
-  if (focused) {
-    renderPageCanvas(appState.focusedPage, myToken).catch((err) => console.error(err))
-  }
+  if (focused) requestPageRender(appState.focusedPage, myToken, { force: true })
   requestAnimationFrame(() => {
     if (myToken !== lastRenderToken) return
     if (pendingScrollAnchor) {
@@ -411,9 +467,10 @@ async function renderPageCanvas(index, token) {
 
   try {
     if (entry.originalIndex === -1) {
-      drawBlankPlaceholder(view.canvas, view.canvas.width, view.canvas.height)
+      drawBlankPlaceholder(view.canvas, view.pxW, view.pxH)
       view.renderedToken = token
       markTextLayerPainted(view)
+      evictDistantPages()
       return
     }
     const page = await getPage(entry.sourceId, entry.originalIndex)
@@ -425,17 +482,21 @@ async function renderPageCanvas(index, token) {
     const ctx = offscreen.getContext('2d')
     await page.render({ canvasContext: ctx, viewport }).promise
     if (token !== lastRenderToken) return
+    view.canvas.width = view.pxW
+    view.canvas.height = view.pxH
     const dest = view.canvas.getContext('2d')
-    dest.clearRect(0, 0, view.canvas.width, view.canvas.height)
     dest.drawImage(offscreen, 0, 0, view.canvas.width, view.canvas.height)
     view.renderedToken = token
     await renderPageTextLayer(view, viewport, token, entry)
+    evictDistantPages()
   } catch (err) {
     if (token !== lastRenderToken) return
     if (err && err.name === 'RenderingCancelledException') return
     if (err && err.name === 'AbortException') return
     console.error('preview render failed', err)
     const styles = getComputedStyle(document.documentElement)
+    view.canvas.width = view.pxW
+    view.canvas.height = view.pxH
     const ctx = view.canvas.getContext('2d')
     ctx.fillStyle = styles.getPropertyValue('--render-error-bg').trim() || '#2A2A2A'
     ctx.fillRect(0, 0, view.canvas.width, view.canvas.height)

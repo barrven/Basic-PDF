@@ -89,6 +89,66 @@ export async function getPageTextContent(sourceId, originalIndex) {
   }
 }
 
+// ---- Render queue ----------------------------------------------------------
+// Page rasterization is the expensive part of showing a document, and both the
+// preview and the thumbnail list ask for it. Everything goes through this queue
+// so that preview pages always run before thumbnails, only a couple of pages
+// rasterize at once, and requests for pages that have scrolled away are
+// dropped instead of rendered.
+
+export const RENDER_PRIORITY = { PREVIEW: 0, THUMBNAIL: 1 }
+const MAX_CONCURRENT_RENDERS = 2
+const renderQueues = [[], []]
+let activeRenders = 0
+
+// run: async () => void. isWanted: checked when the job is picked; a job that
+// is no longer wanted resolves false without running. rank: lower runs first
+// within the same priority.
+export function scheduleRender(priority, run, isWanted = () => true, rank = () => 0) {
+  return new Promise((resolve, reject) => {
+    renderQueues[priority].push({ run, isWanted, rank, resolve, reject })
+    pumpRenderQueue()
+  })
+}
+
+function takeNextRenderJob() {
+  for (const queue of renderQueues) {
+    let best = -1
+    let bestRank = Infinity
+    for (let i = queue.length - 1; i >= 0; i--) {
+      const job = queue[i]
+      if (!job.isWanted()) {
+        queue.splice(i, 1)
+        if (best > i) best--
+        job.resolve(false)
+        continue
+      }
+      const r = job.rank()
+      if (r < bestRank) {
+        bestRank = r
+        best = i
+      }
+    }
+    if (best >= 0) return queue.splice(best, 1)[0]
+  }
+  return null
+}
+
+function pumpRenderQueue() {
+  while (activeRenders < MAX_CONCURRENT_RENDERS) {
+    const job = takeNextRenderJob()
+    if (!job) return
+    activeRenders++
+    Promise.resolve()
+      .then(job.run)
+      .then(() => job.resolve(true), job.reject)
+      .finally(() => {
+        activeRenders--
+        pumpRenderQueue()
+      })
+  }
+}
+
 export function drawBlankPlaceholder(canvas, width, height) {
   canvas.width = Math.floor(width)
   canvas.height = Math.floor(height)

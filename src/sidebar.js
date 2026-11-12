@@ -1,5 +1,5 @@
 import { appState, dispatch, createPageEntry, normalizeRotation } from './state.js'
-import { getPage, drawBlankPlaceholder, PAGE_SIZE_A4, visualPageSize } from './renderer.js'
+import { getPage, drawBlankPlaceholder, PAGE_SIZE_A4, visualPageSize, scheduleRender, RENDER_PRIORITY } from './renderer.js'
 
 const SIDEBAR_MIN = 160
 const SIDEBAR_MAX = 360
@@ -54,12 +54,67 @@ function initResize(handle, sidebar) {
   })
 }
 
+// Thumbnails are rasterized only when they scroll near the sidebar viewport,
+// and through the shared render queue at a lower priority than preview pages.
+let thumbObserver = null
+let thumbGeneration = 0
+let thumbJobs = [] // per index: { entry, canvas, item, canvasMax, state: 'idle' | 'queued' | 'done', visible }
+
+function renderThumbError(job) {
+  const errEl = document.createElement('div')
+  errEl.className = 'render-error'
+  errEl.textContent = 'Page could not be rendered'
+  errEl.style.width = job.canvasMax + 'px'
+  errEl.style.height = '80px'
+  job.canvas.replaceWith(errEl)
+}
+
+function requestThumbRender(job, generation) {
+  if (job.state !== 'idle') return
+  job.state = 'queued'
+  scheduleRender(
+    RENDER_PRIORITY.THUMBNAIL,
+    () => renderThumbCanvas(job.entry, job.canvas, job.canvasMax),
+    () => generation === thumbGeneration && job.visible,
+    () => -job.seq,
+  ).then((ran) => {
+    if (generation !== thumbGeneration) return
+    if (ran) {
+      job.state = 'done'
+      return
+    }
+    job.state = 'idle'
+    if (job.visible) requestThumbRender(job, generation)
+  }, (err) => {
+    if (generation !== thumbGeneration) return
+    console.error('thumbnail render failed', err)
+    job.state = 'done'
+    renderThumbError(job)
+  })
+}
+
 export async function renderThumbnails() {
   const list = document.getElementById('thumbnail-list')
-  list.innerHTML = ''
   const sidebar = document.getElementById('sidebar')
+  const generation = ++thumbGeneration
+  if (thumbObserver) thumbObserver.disconnect()
+  list.innerHTML = ''
+  thumbJobs = []
   const canvasMax = Math.max(40, sidebar.clientWidth - 16 - 8)
+  let seq = 0
 
+  thumbObserver = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      const job = thumbJobs[Number(e.target.dataset.index)]
+      if (!job) continue
+      job.visible = e.isIntersecting
+      if (!e.isIntersecting) continue
+      job.seq = ++seq
+      requestThumbRender(job, generation)
+    }
+  }, { root: sidebar, rootMargin: '600px 0px' })
+
+  const fragment = document.createDocumentFragment()
   for (let i = 0; i < appState.pages.length; i++) {
     const entry = appState.pages[i]
     const item = document.createElement('div')
@@ -67,7 +122,11 @@ export async function renderThumbnails() {
     item.dataset.index = String(i)
     item.draggable = true
 
+    // Placeholder at a typical page shape until the real page is rendered,
+    // so the list has its full height and the scrollbar is stable.
     const canvas = document.createElement('canvas')
+    canvas.width = canvasMax
+    canvas.height = Math.round(canvasMax * (PAGE_SIZE_A4.height / PAGE_SIZE_A4.width))
     item.appendChild(canvas)
 
     const label = document.createElement('span')
@@ -75,19 +134,11 @@ export async function renderThumbnails() {
     label.textContent = String(i + 1)
     item.appendChild(label)
 
-    list.appendChild(item)
-
-    // Render asynchronously so the list paints quickly.
-    renderThumbCanvas(entry, canvas, canvasMax).catch((err) => {
-      console.error('thumbnail render failed', err)
-      const errEl = document.createElement('div')
-      errEl.className = 'render-error'
-      errEl.textContent = 'Page could not be rendered'
-      errEl.style.width = (canvasMax) + 'px'
-      errEl.style.height = '80px'
-      canvas.replaceWith(errEl)
-    })
+    fragment.appendChild(item)
+    thumbJobs.push({ entry, canvas, item, canvasMax, state: 'idle', visible: false, seq: 0 })
   }
+  list.appendChild(fragment)
+  for (const job of thumbJobs) thumbObserver.observe(job.item)
   updateSelectionStyles()
 }
 
@@ -102,9 +153,14 @@ async function renderThumbCanvas(entry, canvas, canvasMax) {
   const baseViewport = page.getViewport({ scale: 1, rotation: entry.rotation })
   const scale = canvasMax / baseViewport.width
   const viewport = page.getViewport({ scale, rotation: entry.rotation })
-  canvas.width = Math.floor(viewport.width)
-  canvas.height = Math.floor(viewport.height)
-  await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+  // Render off-screen so the placeholder is swapped in one step.
+  const offscreen = document.createElement('canvas')
+  offscreen.width = Math.floor(viewport.width)
+  offscreen.height = Math.floor(viewport.height)
+  await page.render({ canvasContext: offscreen.getContext('2d'), viewport }).promise
+  canvas.width = offscreen.width
+  canvas.height = offscreen.height
+  canvas.getContext('2d').drawImage(offscreen, 0, 0)
 }
 
 export function updateSelectionStyles() {
