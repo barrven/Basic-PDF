@@ -1,7 +1,7 @@
 {
   "name": "basic-pdf",
   "productName": "Basic PDF",
-  "version": "1.0.0",
+  "version": "3.1.0",
   "description": "Desktop PDF editor (Tauri)",
   "author": "barrven",
   "license": "MIT",

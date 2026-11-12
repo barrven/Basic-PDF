@@ -1,6 +1,6 @@
 [package]
 name = "basic-pdf"
-version = "1.0.0"
+version = "3.1.0"
 description = "A lightweight desktop PDF editor"
 authors = ["barrven"]
 license = "MIT"
