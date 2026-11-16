@@ -1,12 +1,30 @@
 # Implementation guide: PDF form filling
 
-**Status:** not implemented. This is a design/implementation plan, not as-built documentation (compare `feature-annotate.md`, which describes shipped behavior). It covers the `../todos.md` item "add js form filling features."
+**Status:** implemented (phases 1–3 below). The "As built" section directly below records what shipped and where it differs from the plan; the sections after it are the original plan and are kept for the reasoning. It covers the `../todos.md` item "add js form filling features."
 
 Scope: **fill existing AcroForm fields** (text, checkbox, radio, dropdown, listbox) and save the values into the PDF. It does **not** cover authoring new form fields, XFA forms, PDF-embedded JavaScript (calculations/validation), or signature fields (a different concept from this app's existing image-stamp "Signatures" feature — naming collision to watch for in the UI).
 
 No new dependencies are needed. Both libraries already in `package.json` support this:
 - **pdf.js** (`pdfjs-dist` 4.10.38) exports `AnnotationLayer` from `build/pdf.mjs` and can report field data via `PDFDocumentProxy.getFieldObjects()`.
 - **pdf-lib** (1.17.1) can read/write AcroForm values via `PDFDocument.getForm()`.
+
+---
+
+## As built
+
+Files: `src/forms.js` (detection, widgets, edit events, redaction support), `src/forms-save.js` (pdf-lib: write values, rebuild AcroForm), plus hooks in `src/preview.js`, `src/pdf-engine.js`, `src/toolbar.js` (insert), `src/state.js` and `src/renderer.js` (`getPdfDocFor`).
+
+Differences from the plan:
+
+- **Widgets are hand-built DOM controls, not pdf.js `AnnotationLayer`.** `renderFormLayer()` reads `page.getAnnotations()` and positions an `<input>` / `<textarea>` / `<select>` per widget in `.annot-form-layer` using `viewport.convertToViewportRectangle`. Each control sits in an opaque `.form-widget` box because pdf.js still paints the field's original appearance on the canvas. No pdf.js CSS was copied.
+- **Detection** uses `getFieldObjects()` (cheap, `null` for documents with no form) and records fillable pages in `appState.formFields`. XFA documents show a toast and get no widgets.
+- **Values are written to the source document before `copyPages()`**, not to the output document. The output never has an AcroForm of its own, so the plan's `newDoc.getForm()` code would find nothing. `applyFieldValues()` runs in `getSrcDoc()`; afterwards `rebuildAcroForm()` recreates `/AcroForm /Fields` from the widgets that landed on output pages so the saved fields stay editable.
+- **Leak fix not in the plan:** widgets carry a `/P` back-pointer, and `copyPages()` follows it. A field shared with a deleted page would pull that page's whole content into the saved file. `stripWidgetPageRefs()` removes `/P` from the source's widgets before copying.
+- **Radio values** are pdf.js on-state names (`"0"`, `"1"`); `applyFieldValues()` maps them to pdf-lib option labels. Dropdown / list values are mapped from export to display values.
+- **Redaction + form on one page (plan §6)**: neither blocked nor lossy. A flattened page is rendered by pdf.js with `annotationMode` `ENABLE_STORAGE` after `applyFormValuesToStorage()`, so the user's values are burned into the image. Fields on that page are no longer live afterwards. In the preview, a widget overlapped by a redaction is hidden.
+- **Undo** coalesces typing into one step per focus; checkboxes, radios and selects push one step per change. Undo and redo rebuild the preview, which re-seeds the widgets from `fieldValues`.
+
+Not done: the flatten-on-save option (phase 4), and duplicated pages that carry a form save two fields with the same name (a spec gray area, see §7).
 
 ---
 

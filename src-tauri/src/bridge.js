@@ -37,6 +37,19 @@
       invoke('set_dirty', { dirty: !!dirty }).catch(() => {})
     },
     getAppInfo: () => invoke('get_app_info'),
+    // Signing identities. The shell keeps the private keys; only display-safe
+    // details come back.
+    listIdentities: () => invoke('list_identities'),
+    removeIdentity: (id) => invoke('remove_identity', { id }),
+    generateSelfSignedIdentity: (commonName, label) =>
+      invoke('generate_self_signed_identity', { commonName, label }),
+    importIdentity: (pfxBytes, password, label) =>
+      invoke('import_identity', { pfxBytes: Array.from(pfxBytes), password, label }),
+    signPdf: async (pdfBytes, identityId) =>
+      new Uint8Array(
+        await invoke('sign_pdf', toBytes(pdfBytes), { headers: { 'x-identity': header(identityId) } }),
+      ),
+    confirm: (message, okLabel, title) => invoke('confirm_action', { message, okLabel: okLabel || 'OK', title }),
     promptUnsaved: (message) => invoke('prompt_unsaved', { message }),
     revealInFolder: (path) => invoke('reveal_in_folder', { path }),
     getTheme: () => invoke('get_theme'),

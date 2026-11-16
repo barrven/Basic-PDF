@@ -2,8 +2,9 @@ import { appState, dispatch, createPageEntry, normalizeRotation } from './state.
 import { withDocumentLoading } from './main.js'
 import { addPdfSource } from './renderer.js'
 import { showSignatureModal, toggleSigPopover } from './signature.js'
-import { showErrorModal } from './main.js'
+import { showErrorModal, showToast } from './main.js'
 import { setTool, markupHighlight, markupRedact } from './markup.js'
+import { detectForms } from './forms.js'
 import { snapZoom, ZOOM_MIN, ZOOM_MAX } from './zoom.js'
 
 const ICONS = {
@@ -222,6 +223,9 @@ async function insertPdfFromOpenResult(result) {
   const sourceId = `inserted-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   await addPdfSource(sourceId, result.buffer)
 
+  const forms = await detectForms(sourceId)
+  if (forms.xfa) showToast("The inserted PDF has an XFA form, which isn't supported. Its fields can't be filled.", 4500)
+
   const insertAt = appState.focusedPage + 1
   const insertedEntries = Array.from({ length: insertCount }, (_, i) => {
     const angle = insertedDoc.getPage(i).getRotation().angle
@@ -243,6 +247,7 @@ async function insertPdfFromOpenResult(result) {
     type: 'INSERT_PAGES',
     sourceId,
     sourceBytes: result.buffer,
+    formFields: forms.fields,
     pages: newPages,
     focusedPage: insertAt,
     shiftFromIndex: insertAt,

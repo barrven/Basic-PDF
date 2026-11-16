@@ -4,6 +4,8 @@
 //!
 //! `bridge.js` maps `window.nativeAPI` onto the commands defined here.
 
+mod signing;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -318,6 +320,25 @@ fn prompt_unsaved(app: AppHandle, window: WebviewWindow, message: String) -> Str
     .to_string()
 }
 
+/// Native OK / Cancel prompt for destructive actions (see prompt_unsaved for why
+/// the renderer cannot use window.confirm).
+#[tauri::command(async)]
+fn confirm_action(
+    app: AppHandle,
+    window: WebviewWindow,
+    message: String,
+    ok_label: String,
+    title: Option<String>,
+) -> bool {
+    app.dialog()
+        .message(message)
+        .title(title.unwrap_or_else(|| "Confirm".to_string()))
+        .kind(MessageDialogKind::Warning)
+        .parent(&window)
+        .buttons(MessageDialogButtons::OkCancelCustom(ok_label, "Cancel".into()))
+        .blocking_show()
+}
+
 /// Opens the file's parent folder in Explorer with the file selected.
 #[tauri::command]
 fn reveal_in_folder(path: String) -> CmdResult<()> {
@@ -495,6 +516,12 @@ pub fn run() {
             get_app_info,
             reveal_in_folder,
             prompt_unsaved,
+            confirm_action,
+            signing::list_identities,
+            signing::remove_identity,
+            signing::generate_self_signed_identity,
+            signing::import_identity,
+            signing::sign_pdf,
             get_theme,
             set_theme,
             window_minimize,

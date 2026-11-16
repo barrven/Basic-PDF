@@ -31,6 +31,10 @@
     </div>
     <div id="toolbar"></div>
     <div id="markup-ribbon" hidden></div>
+    <div id="notice-bar" hidden role="status">
+      <span id="notice-text"></span>
+      <button type="button" id="notice-close" aria-label="Dismiss" title="Dismiss">×</button>
+    </div>
     <div id="workspace">
       <div id="sidebar">
         <div id="sidebar-tabs" role="tablist" aria-label="Sidebar view">
@@ -76,6 +80,7 @@
           <button class="tab-btn" data-tab="upload">Upload</button>
         </div>
         <div class="modal-body">
+          <div id="sig-digital-row" class="digital-row"></div>
           <div class="tab-panel" data-panel="draw" data-active="true">
             <canvas id="draw-canvas" width="480" height="200"></canvas>
             <div class="modal-row">
@@ -100,6 +105,35 @@
           </div>
         </div>
       </div>
+    </div>
+    <div id="identity-modal-backdrop" hidden>
+      <form id="identity-modal" role="dialog" aria-modal="true" aria-labelledby="identity-modal-title" autocomplete="off">
+        <div class="modal-header">
+          <h2 id="identity-modal-title">Signing identity</h2>
+          <button type="button" class="modal-close" data-action="close-identity-modal" aria-label="Close">×</button>
+        </div>
+        <div class="modal-body identity-form-body">
+          <p id="identity-note"></p>
+          <label class="identity-field identity-field-self">Name
+            <input id="identity-name" type="text" maxlength="64" placeholder="Jane Doe" />
+          </label>
+          <label class="identity-field identity-field-import">Certificate file (.p12 / .pfx)
+            <input id="identity-file" type="file" accept=".p12,.pfx,application/x-pkcs12" />
+          </label>
+          <label class="identity-field identity-field-import">Password
+            <input id="identity-password" type="password" autocomplete="off" />
+          </label>
+          <label class="identity-field">Label (optional)
+            <input id="identity-label" type="text" maxlength="64" placeholder="Shown in the identity list" />
+          </label>
+          <p id="identity-error" hidden></p>
+          <div class="modal-row">
+            <div class="modal-spacer"></div>
+            <button type="button" class="btn-secondary" data-action="close-identity-modal">Cancel</button>
+            <button type="submit" class="btn-primary" id="identity-submit">Add</button>
+          </div>
+        </div>
+      </form>
     </div>
     <div id="about-modal-backdrop" hidden>
       <div id="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-name">

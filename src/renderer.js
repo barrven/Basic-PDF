@@ -61,6 +61,10 @@ export function getPdfDoc() {
   return pdfDocs.get(PRIMARY_SOURCE_ID) || null
 }
 
+export function getPdfDocFor(sourceId) {
+  return pdfDocs.get(sourceId) || null
+}
+
 export function getPdfDocBytes() {
   return primaryBytes
 }

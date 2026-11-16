@@ -4,8 +4,8 @@
 - [x] add text highlighting
 - [x] add redaction
 
-- [ ] add js form filling features
-- [ ] add cryptographic (digital) signatures — see `features/feature-digital-signature-guide.md`
+- [x] add js form filling features — see `features/feature-forms-plan.md`
+- [x] add cryptographic (digital) signatures — see `features/feature-digital-signature-guide.md`
 
 
 # Completed

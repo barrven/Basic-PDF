@@ -1,6 +1,7 @@
 import { appState, dispatch } from './state.js'
 import { getLibrary, addToLibrary, removeFromLibrary } from './store.js'
 import { showToast } from './main.js'
+import { activeIdentity, isExpired, refreshIdentities, renderChoiceRow, renderIdentitySection } from './identities.js'
 
 function nanoid() {
   return crypto.randomUUID().replace(/-/g, '').slice(0, 12)
@@ -199,6 +200,7 @@ function initUploadZone() {
 export function showSignatureModal() {
   const bd = document.getElementById('modal-backdrop')
   bd.hidden = false
+  refreshIdentities().then(() => renderChoiceRow(document.getElementById('sig-digital-row')))
   clearDrawCanvas()
   // Default to draw tab.
   document.querySelectorAll('#signature-modal .tab-btn').forEach((b) => {
@@ -403,6 +405,20 @@ export function handlePlacementClick(e, pageView) {
   const y = (e.clientY - rect.top) / pageView.scale
   const width = pageView.pdfWidth * 0.30
   const height = width * (placementImgNatural.h / placementImgNatural.w)
+  const identity = activeIdentity()
+  if (identity) {
+    // One digital signature per save (later signers would need incremental updates).
+    if (appState.signatures.some((s) => s.digital)) {
+      showToast('Only one cryptographic signature is supported per document.', 3500)
+      exitPlacementMode()
+      return
+    }
+    if (isExpired(identity)) {
+      showToast('That signing certificate has expired.', 3500)
+      exitPlacementMode()
+      return
+    }
+  }
   dispatch({
     type: 'ADD_SIGNATURE',
     signature: {
@@ -414,8 +430,10 @@ export function handlePlacementClick(e, pageView) {
       height,
       opacity: 1,
       dataUrl: appState.placementSig,
+      ...(identity ? { digital: true, identityId: identity.id, signerLabel: identity.subjectCn } : {}),
     },
   })
+  if (identity) showToast('This stamp will be cryptographically signed when you save.', 3500)
   exitPlacementMode()
 }
 
@@ -466,7 +484,6 @@ async function renderSigPopover() {
     p.style.padding = '12px'
     p.style.margin = '0'
     pop.appendChild(p)
-    return
   }
   // Newest first.
   for (let i = lib.length - 1; i >= 0; i--) {
@@ -511,4 +528,5 @@ async function renderSigPopover() {
     row.appendChild(del)
     pop.appendChild(row)
   }
+  await renderIdentitySection(pop, renderSigPopover)
 }

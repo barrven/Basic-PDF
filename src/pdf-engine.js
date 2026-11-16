@@ -1,7 +1,10 @@
 import { PDFDocument, degrees, rgb, BlendMode } from '../node_modules/pdf-lib/dist/pdf-lib.esm.js'
 import { appState, dispatch, PRIMARY_SOURCE_ID, createPageEntry, normalizeRotation } from './state.js'
 import { setPrimarySource, clearPdfSources, openIsolatedPdf } from './renderer.js'
-import { showToast, showErrorModal, withDocumentLoading } from './main.js'
+import { showToast, showErrorModal, showNotice, hideNotice, withDocumentLoading } from './main.js'
+import { addSignaturePlaceholder, documentHasSignature, SIGNED_SAVE_OPTIONS } from './pdf-signature.js'
+import { detectForms, applyFormValuesToStorage } from './forms.js'
+import { applyFieldValues, rebuildAcroForm, stripWidgetPageRefs } from './forms-save.js'
 import { isMarkup, embedMarkupFont, drawMarkupOnPdfPage, drawMarkupOnCanvas } from './markup-save.js'
 
 const HIGHLIGHT_RGB = { r: 1, g: 229 / 255, b: 102 / 255 }
@@ -74,7 +77,9 @@ export function initOsFileOpen() {
 export async function loadFromBytes(filePath, bytes) {
   try {
     // Validate it loads with pdf-lib (catches malformed files).
-    await PDFDocument.load(bytes, LOAD_OPTS)
+    const validated = await PDFDocument.load(bytes, LOAD_OPTS)
+    const alreadySigned = documentHasSignature(validated)
+    hideNotice()
     const pdfDoc = await setPrimarySource(bytes)
     const pageCount = pdfDoc.numPages
     const pages = []
@@ -86,12 +91,20 @@ export async function loadFromBytes(filePath, bytes) {
         rotation: page.rotate,
       }))
     }
+    const forms = await detectForms(PRIMARY_SOURCE_ID)
     dispatch({
       type: 'OPEN_FILE',
       path: filePath,
       bytes: bytes,
       pages,
+      formFields: forms.fields,
     })
+    if (alreadySigned) {
+      showNotice('This PDF already has a digital signature. Saving changes here will remove it.')
+    }
+    if (forms.xfa) {
+      showToast("This PDF uses an XFA form, which isn't supported. Its fields can't be filled.", 4500)
+    }
   } catch (err) {
     console.error(err)
     showErrorModal('Could not open this file. It may be corrupt or not a valid PDF.')
@@ -195,7 +208,10 @@ async function rasterizeRedactedPage(pdfJsDoc, entry, pageIndex) {
   const ctx = canvas.getContext('2d')
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-  await page.render({ canvasContext: ctx, viewport }).promise
+  // Burn the user's form edits into the image: pdf.js draws widgets from
+  // annotationStorage when annotationMode is ENABLE_STORAGE (3).
+  await applyFormValuesToStorage(pdfJsDoc, entry.sourceId, entry.originalIndex)
+  await page.render({ canvasContext: ctx, viewport, annotationMode: 3 }).promise
 
   const highlights = appState.annotations.filter((a) => a.type === 'highlight' && a.pageIndex === pageIndex)
   if (highlights.length) {
@@ -236,16 +252,22 @@ async function rasterizeRedactedPage(pdfJsDoc, entry, pageIndex) {
   }
 }
 
+let lastFormFailures = 0
+
 async function buildOutputDoc() {
   const newDoc = await PDFDocument.create()
   const srcDocs = new Map() // sourceId -> pdf-lib PDFDocument
   const rasterDocs = new Map() // sourceId -> isolated pdf.js PDFDocumentProxy
   const flattened = new Set()
+  let formFailures = 0
   let markupFont = null
   async function getSrcDoc(sourceId) {
     if (srcDocs.has(sourceId)) return srcDocs.get(sourceId)
     const bytes = await getSourceBytes(sourceId)
     const doc = await PDFDocument.load(bytes, LOAD_OPTS)
+    // Fill in the user's form edits while the source still owns its AcroForm.
+    formFailures += applyFieldValues(doc, sourceId, appState.fieldValues)
+    if (Object.keys(appState.formFields).length) stripWidgetPageRefs(doc)
     srcDocs.set(sourceId, doc)
     return doc
   }
@@ -315,6 +337,9 @@ async function buildOutputDoc() {
       }
     }
 
+    if (Object.keys(appState.formFields).length) rebuildAcroForm(newDoc)
+    lastFormFailures = formFailures
+
     for (const sig of appState.signatures) {
       if (sig.pageIndex < 0 || sig.pageIndex >= appState.pages.length) continue
       if (flattened.has(sig.pageIndex)) continue
@@ -331,17 +356,38 @@ async function buildOutputDoc() {
   return newDoc
 }
 
+function pendingDigitalSignature() {
+  return appState.signatures.find((s) => s.digital && s.identityId && s.pageIndex < appState.pages.length) || null
+}
+
+// buildOutputDoc() plus, when a digital signature is pending, the signing step.
+// Signing must be the last thing that touches the bytes.
+async function buildOutputBytes() {
+  const newDoc = await buildOutputDoc()
+  const sig = pendingDigitalSignature()
+  if (!sig) return newDoc.save()
+  addSignaturePlaceholder(newDoc, newDoc.getPage(sig.pageIndex), sig, {
+    name: sig.signerLabel || '',
+    reason: sig.reason || '',
+    location: sig.location || '',
+  })
+  const unsigned = await newDoc.save(SIGNED_SAVE_OPTIONS)
+  return window.nativeAPI.signPdf(unsigned, sig.identityId)
+}
+
 export async function saveDocument(targetPath) {
   if (!appState.filePath) return
   try {
-    const newDoc = await buildOutputDoc()
-    const bytes = await newDoc.save()
+    const bytes = await buildOutputBytes()
     await window.nativeAPI.saveFile(targetPath, bytes)
     if (targetPath !== appState.filePath) {
       dispatch({ type: 'SET_FILE_PATH', path: targetPath })
     }
     dispatch({ type: 'SET_DIRTY', dirty: false })
-    showToast('Saved ✓', 2000)
+    showToast(
+      lastFormFailures ? `Saved, but ${lastFormFailures} form field(s) could not be written.` : 'Saved ✓',
+      lastFormFailures ? 4500 : 2000,
+    )
   } catch (err) {
     console.error(err)
     showErrorModal('Save failed: ' + (err && err.message ? err.message : String(err)))
@@ -354,7 +400,7 @@ function hasRedactions() {
 
 export async function save() {
   if (!appState.filePath) return
-  if (hasRedactions()) {
+  if (hasRedactions() || pendingDigitalSignature()) {
     await withDocumentLoading(() => saveDocument(appState.filePath), 'Saving…')
     return
   }
@@ -371,13 +417,9 @@ export async function closeFile() {
 export async function saveAs() {
   if (!appState.filePath) return
   try {
-    const build = async () => {
-      const newDoc = await buildOutputDoc()
-      return newDoc.save()
-    }
-    const bytes = hasRedactions()
-      ? await withDocumentLoading(build, 'Saving…')
-      : await build()
+    const bytes = hasRedactions() || pendingDigitalSignature()
+      ? await withDocumentLoading(buildOutputBytes, 'Saving…')
+      : await buildOutputBytes()
     const defaultName = basename(appState.filePath) || 'document.pdf'
     const newPath = await window.nativeAPI.saveFileAs(bytes, defaultName)
     if (!newPath) return

@@ -1,8 +1,26 @@
 # Implementation guide: cryptographic (digital) signatures
 
-**Status:** design/implementation guide only — nothing here is built. The renderer-side sections were written against an earlier revision ("Keep highlighted text readable in the preview.", `3cce064`); the shell-side sections were revised for the Tauri shell and have not been prototyped. Cross-check `file:line` references against current source before coding; they will drift. Crate names in §3 are candidates to evaluate, not tested choices.
+**Status:** implemented through the phased rollout in §12 (identity commands, self-signed generation and PFX import, save-flow integration, and the already-signed warning). The "As built" section below lists what shipped and what differs from the guide; the sections after it are the original guide, kept for the reasoning. `file:line` references in the guide are stale.
 
 This describes how to add a real cryptographic signature (PAdES/PKCS#7, the kind Adobe Reader shows a blue ribbon for) on top of the existing signature *stamp* feature. It is a substantially bigger feature than it looks, because it touches the shell/renderer boundary, save semantics, and PDF's byte-level signing format — not just UI. Read the whole thing before starting; the "gotchas" section exists because each one was a redesign, not a bug fix, when skipped.
+
+---
+
+## As built
+
+Files: `src-tauri/src/signing.rs` (identities, DPAPI protection, CMS, byte-range patching, unit tests), `src/pdf-signature.js` (placeholder + already-signed detection), `src/identities.js` (identity list, create/import dialog, "also apply a cryptographic signature" choice), and hooks in `src/pdf-engine.js` (`buildOutputBytes`), `src/signature.js`, `src/preview.js`, `src-tauri/src/bridge.js`.
+
+Differences from the guide:
+
+- **Algorithms.** Self-signed identities use ECDSA P-256 (fast, no RSA key generation). Imported `.p12` / `.pfx` files may hold an RSA or P-256 key; both modern (AES) and legacy PFX encryption were tested. Signatures are `ETSI.CAdES.detached` with SHA-256 and the `signing-certificate-v2` attribute.
+- **Crates.** Stable RustCrypto releases (`cms` 0.2, `x509-cert` 0.2, `p256` 0.13, `rsa` 0.9) and `p12-keystore` for PFX parsing, not the pre-release versions `cargo search` lists first. The `cms` builder is not used; `SignedData` is assembled from its structs. The dev profile compiles dependencies at `opt-level = 3` because pure-Rust crypto is too slow unoptimised, so the first `npm start` after pulling this builds for longer.
+- **Storage.** Identities live in `identities.json` in the app config folder. Each record's key material (PKCS#8 key and certificate chain as JSON) is protected with Windows DPAPI (`CryptProtectData`) and only decrypted inside `sign_pdf`. A PFX password is used once at import and is never stored. Protected storage is Windows-only; other platforms return an error.
+- **Placeholder format.** pdf-lib serializes `/ByteRange` as `[ 0 1234567890 1234567890 1234567890 ]` (spaces inside the brackets), and the shell searches for exactly that text. The `/Contents` placeholder is 12288 bytes. The signed save uses `useObjectStreams: false`.
+- **UI.** The signature modal and the saved-signatures popover both show "Also apply a cryptographic signature" with an identity picker; the popover also lists identities (with expiry and a self-signed tag) and has Import… / Create self-signed…. A stamp that will be signed shows a lock badge. The choice is remembered in `localStorage`. Reason and location fields are not exposed (the placeholder supports them).
+- **Already-signed PDFs.** Opening one shows a dismissible banner (`#notice-bar`): "Saving changes here will remove it." Signatures are still discarded on save.
+- **Limits kept from the guide:** one digital signature per document, no timestamping or revocation checks, no incremental update.
+
+Verified by hand against OpenSSL: the CMS verifies for P-256 and RSA identities and fails after a single changed byte. The renderer's own output (with a form and a signature field) was signed and verified the same way. Adobe Reader / `pdfsig` were not available, so how Acrobat displays the signature has not been checked.
 
 ---
 
