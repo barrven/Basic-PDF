@@ -289,6 +289,28 @@ fn get_app_info(app: AppHandle) -> HashMap<&'static str, String> {
     ])
 }
 
+/// Opens the file's parent folder in Explorer with the file selected.
+#[tauri::command]
+fn reveal_in_folder(path: String) -> CmdResult<()> {
+    let p = PathBuf::from(&path);
+    if !p.is_file() {
+        return Err("That file no longer exists.".to_string());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // raw_arg keeps Explorer's `/select,"path"` syntax intact for paths with spaces.
+        std::process::Command::new("explorer")
+            .raw_arg(format!("/select,\"{}\"", path))
+            .spawn()
+            .map_err(err)?;
+    }
+    #[cfg(not(windows))]
+    return Err("Not supported on this platform.".to_string());
+    #[cfg(windows)]
+    Ok(())
+}
+
 /// Shows a native context menu at the cursor; resolves to the chosen label,
 /// or `None` when dismissed.
 #[tauri::command(async)]
@@ -442,6 +464,7 @@ pub fn run() {
             store_set,
             set_dirty,
             get_app_info,
+            reveal_in_folder,
             get_theme,
             set_theme,
             window_minimize,

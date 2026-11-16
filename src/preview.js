@@ -45,6 +45,7 @@ export function initPreview() {
     }
     if (e.target.closest('.sig-overlay')) return
     if (e.target.closest('.annot-redact-rect')) return
+    if (e.target.closest('.markup-item')) return
     if (clickFinishedTextDrag(e) || textSelectionIsNonCollapsed()) return
     if (appState.selectedSig) {
       dispatch({ type: 'SET_SELECTED_SIG', id: null })

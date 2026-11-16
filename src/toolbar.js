@@ -1,21 +1,21 @@
 import { appState, dispatch, createPageEntry, normalizeRotation } from './state.js'
-import { openFile, save, saveAs, closeFile } from './pdf-engine.js'
 import { withDocumentLoading } from './main.js'
 import { addPdfSource } from './renderer.js'
 import { showSignatureModal, toggleSigPopover } from './signature.js'
 import { showErrorModal } from './main.js'
+import { setTool, markupHighlight, markupRedact } from './markup.js'
 import { snapZoom, ZOOM_MIN, ZOOM_MAX } from './zoom.js'
 
 const ICONS = {
-  open: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h4l2 2h6v7H2z"/></svg>`,
-  save: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h8l2 2v10H3z"/><path d="M5 2v4h6V2"/><path d="M5 10h6v4H5z"/></svg>`,
-  'save-as': `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h8l2 2v10H3z"/><path d="M5 2v4h6V2"/><path d="M10.5 9.5l1 1L13.5 8.5"/></svg>`,
-  'add-blank': `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="2" width="9" height="12"/><path d="M7.5 6v4M5.5 8h4"/></svg>`,
-  'insert-pdf': `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="2" width="9" height="12"/><path d="M5 7h5M5 10h3"/></svg>`,
-  'delete-pages': `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10"/><path d="M5 4V2h6v2"/><path d="M4 4v10h8V4"/><path d="M7 7v5M9 7v5"/></svg>`,
-  'rotate': `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1 -1.5 -3.5"/><path d="M11.5 2v3h-3"/></svg>`,
+  markup: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l1-3 7-7 2 2-7 7z"/><path d="M9.5 4.5l2 2"/></svg>`,
+  highlight: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3l4 4-5 5H5V9z"/><path d="M3 14h10"/></svg>`,
+  redact: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="12" height="6" fill="currentColor"/></svg>`,
+  text: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4V3h10v1M8 3v10M6 13h4"/></svg>`,
+  rect: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="7" height="7"/><circle cx="10.5" cy="5.5" r="3.5"/></svg>`,
+  ellipse: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="8" cy="8" rx="6" ry="4.5"/></svg>`,
+  line: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13L13 3"/></svg>`,
+  draw: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11c2-5 4-6 5-3s2 2 3-1 2-2 4 0"/></svg>`,
   'add-signature': `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2-4 4-6 5-6s1 3 2 3 2-4 4-4"/><path d="M2 14h12"/></svg>`,
-  'close-file': `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg>`,
 }
 
 function makeButton(action, label, iconKey, opts = {}) {
@@ -41,41 +41,27 @@ function makeSep() {
   return sep
 }
 
+// kind 'action' runs once on the current text selection; kind 'tool' arms a drawing tool.
+const MARKUP_TOOLS = [
+  { kind: 'action', action: 'markup-highlight', label: 'Highlight', icon: 'highlight', title: 'Highlight selected text (Ctrl/Cmd+H)' },
+  { kind: 'action', action: 'markup-redact', label: 'Redact', icon: 'redact', title: 'Redact selected text' },
+  { kind: 'tool', tool: 'text', label: 'Text', icon: 'text', title: 'Add text: click the page, type, then click away (Ctrl+Enter also finishes)' },
+  { kind: 'tool', tool: 'rect', label: 'Rectangle', icon: 'rect', title: 'Draw a rectangle' },
+  { kind: 'tool', tool: 'ellipse', label: 'Ellipse', icon: 'ellipse', title: 'Draw an ellipse' },
+  { kind: 'tool', tool: 'line', label: 'Line', icon: 'line', title: 'Draw a line' },
+  { kind: 'tool', tool: 'draw', label: 'Draw', icon: 'draw', title: 'Freehand drawing' },
+]
+
 export function initToolbar() {
   const bar = document.getElementById('toolbar')
   bar.innerHTML = ''
 
-  bar.appendChild(makeButton('open', 'Open', 'open', { title: 'Open (Ctrl/Cmd+O)' }))
-  bar.appendChild(makeButton('save', 'Save', 'save', { title: 'Save (Ctrl/Cmd+S)' }))
-  bar.appendChild(makeButton('save-as', 'Save As', 'save-as', { title: 'Save As (Ctrl/Cmd+Shift+S)' }))
-  bar.appendChild(makeSep())
-  // bar.appendChild(makeButton('add-blank', 'Add page', 'add-blank')) // keep feature disabled for now until annotation features are added
-  bar.appendChild(makeButton('insert-pdf', 'Insert PDF', 'insert-pdf'))
-  bar.appendChild(makeButton('delete-pages', 'Delete page', 'delete-pages'))
-  bar.appendChild(makeSep())
-  bar.appendChild(makeButton('rotate', 'Rotate', 'rotate', { title: 'Rotate page right (])' }))
-  bar.appendChild(makeSep())
+  const markupBtn = makeButton('toggle-markup', 'Markup', 'markup', { title: 'Show or hide the markup tools' })
+  markupBtn.setAttribute('aria-expanded', 'false')
+  markupBtn.setAttribute('aria-controls', 'markup-ribbon')
+  bar.appendChild(markupBtn)
 
-  // Signature button with embedded dropdown arrow
-  const sigBtn = document.createElement('button')
-  sigBtn.className = 'toolbar-btn signature-btn'
-  sigBtn.dataset.action = 'add-signature'
-  sigBtn.setAttribute('style', '-webkit-app-region: no-drag')
-  sigBtn.title = 'Add a signature'
-  const sigInner = document.createElement('span')
-  sigInner.className = 'label-wrap'
-  sigInner.innerHTML = `<span class="toolbar-icon">${ICONS['add-signature']}</span><span class="toolbar-label">Signature</span>`
-  sigBtn.appendChild(sigInner)
-  const sigArrow = document.createElement('button')
-  sigArrow.className = 'sig-dropdown-arrow'
-  sigArrow.dataset.action = 'sig-library'
-  sigArrow.setAttribute('style', '-webkit-app-region: no-drag')
-  sigArrow.title = 'Saved signatures'
-  sigArrow.textContent = '▾'
-  sigBtn.appendChild(sigArrow)
-  bar.appendChild(sigBtn)
-
-  bar.appendChild(makeSep())
+  initMarkupRibbon()
 
   const spacer = document.createElement('div')
   spacer.className = 'toolbar-spacer'
@@ -108,11 +94,64 @@ export function initToolbar() {
   zoomGroup.appendChild(zoomIn)
   bar.appendChild(zoomGroup)
 
-  bar.appendChild(makeSep())
-  bar.appendChild(makeButton('close-file', 'Close file', 'close-file', { title: 'Close current file' }))
 
   bar.addEventListener('click', onToolbarClick)
+  document.getElementById('markup-ribbon').addEventListener('click', onToolbarClick)
   updateToolbar()
+}
+
+function initMarkupRibbon() {
+  const ribbon = document.getElementById('markup-ribbon')
+  ribbon.innerHTML = ''
+  // Keep the page's text selection alive when a ribbon button is clicked.
+  ribbon.addEventListener('mousedown', (e) => {
+    if (e.target.closest('button')) e.preventDefault()
+  })
+  for (const t of MARKUP_TOOLS) {
+    const btn = makeButton(t.kind === 'tool' ? 'markup-tool' : t.action, t.label, t.icon, { title: t.title })
+    if (t.kind === 'tool') {
+      btn.dataset.tool = t.tool
+      btn.setAttribute('aria-pressed', 'false')
+    }
+    ribbon.appendChild(btn)
+  }
+
+  const style = document.createElement('div')
+  style.className = 'markup-style'
+  style.innerHTML = '<input type="color" id="markup-color" value="#e03131" title="Color for text, shapes and lines" aria-label="Markup color">' +
+    '<select id="markup-width" title="Line thickness" aria-label="Line thickness">' +
+    '<option value="1">Thin</option><option value="2" selected>Medium</option><option value="4">Thick</option><option value="6">Heavy</option></select>'
+  ribbon.appendChild(style)
+  ribbon.appendChild(makeSep())
+
+  // Signature button with embedded dropdown arrow
+  const sigBtn = document.createElement('button')
+  sigBtn.className = 'toolbar-btn signature-btn'
+  sigBtn.dataset.action = 'add-signature'
+  sigBtn.setAttribute('style', '-webkit-app-region: no-drag')
+  sigBtn.title = 'Add a signature'
+  const sigInner = document.createElement('span')
+  sigInner.className = 'label-wrap'
+  sigInner.innerHTML = `<span class="toolbar-icon">${ICONS['add-signature']}</span><span class="toolbar-label">Signature</span>`
+  sigBtn.appendChild(sigInner)
+  const sigArrow = document.createElement('button')
+  sigArrow.className = 'sig-dropdown-arrow'
+  sigArrow.dataset.action = 'sig-library'
+  sigArrow.setAttribute('style', '-webkit-app-region: no-drag')
+  sigArrow.title = 'Saved signatures'
+  sigArrow.textContent = '▾'
+  sigBtn.appendChild(sigArrow)
+  ribbon.appendChild(sigBtn)
+}
+
+function toggleMarkupRibbon() {
+  const ribbon = document.getElementById('markup-ribbon')
+  const btn = document.querySelector('#toolbar [data-action="toggle-markup"]')
+  ribbon.hidden = !ribbon.hidden
+  if (btn) {
+    btn.setAttribute('aria-expanded', ribbon.hidden ? 'false' : 'true')
+    btn.classList.toggle('active', !ribbon.hidden)
+  }
 }
 
 function stepZoom(direction) {
@@ -125,36 +164,17 @@ async function onToolbarClick(e) {
   const action = target.dataset.action
   if (target.disabled) return
   switch (action) {
-    case 'open':
-      await openFile()
+    case 'markup-highlight':
+      markupHighlight()
       break
-    case 'save':
-      await save()
+    case 'markup-redact':
+      markupRedact()
       break
-    case 'save-as':
-      await saveAs()
+    case 'markup-tool':
+      setTool(target.dataset.tool)
       break
-    case 'add-blank': {
-      const insertAt = appState.focusedPage + 1
-      const newPages = [...appState.pages]
-      newPages.splice(insertAt, 0, createPageEntry({ sourceId: null, originalIndex: -1, rotation: 0 }))
-      dispatch({ type: 'SET_PAGE_ORDER', pages: newPages })
-      dispatch({ type: 'SET_FOCUSED_PAGE', page: insertAt })
-      break
-    }
-    case 'insert-pdf': {
-      await insertPdfFile()
-      break
-    }
-    case 'delete-pages': {
-      deleteSelectedPages()
-      break
-    }
-    case 'rotate':
-      rotateSelected(90)
-      break
-    case 'close-file':
-      await closeFile()
+    case 'toggle-markup':
+      toggleMarkupRibbon()
       break
     case 'add-signature':
       e.stopPropagation()
@@ -176,7 +196,7 @@ async function onToolbarClick(e) {
   }
 }
 
-async function insertPdfFile() {
+export async function insertPdfFile() {
   if (appState.loading) return
   const result = await window.nativeAPI.openFile()
   if (!result) return
@@ -260,23 +280,15 @@ export function updateToolbar() {
   const fileOpen = appState.filePath !== null
   const busy = appState.loading
   const map = {
-    open: busy,
-    save: !fileOpen || busy,
-    'save-as': !fileOpen || busy,
-    'add-blank': !fileOpen || busy,
-    'insert-pdf': !fileOpen || busy,
-    'rotate': !fileOpen || busy,
-    'close-file': !fileOpen || busy,
     'add-signature': busy,
     'sig-library': busy,
-    'delete-pages':
-      !fileOpen ||
-      busy ||
-      appState.pages.length <= 1,
   }
   for (const [action, disabled] of Object.entries(map)) {
-    const btn = document.querySelector(`#toolbar [data-action="${action}"]`)
+    const btn = document.querySelector(`#toolbar [data-action="${action}"], #markup-ribbon [data-action="${action}"]`)
     if (btn) btn.disabled = disabled
+  }
+  for (const btn of document.querySelectorAll('#markup-ribbon [data-action^="markup-"]')) {
+    btn.disabled = !fileOpen || busy
   }
   const currentZoom = appState.zoom ?? 100
   const zoomOutBtn = document.querySelector('#toolbar [data-action="zoom-out"]')
