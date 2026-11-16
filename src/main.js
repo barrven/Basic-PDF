@@ -11,6 +11,7 @@ import { initTheme } from './theme.js'
 import { initAbout } from './about.js'
 import { initMenubar, updateMenubar } from './menubar.js'
 import { initMarkup } from './markup.js'
+import { initOutline } from './outline.js'
 
 // ─────────── Toast ───────────
 
@@ -181,6 +182,7 @@ function init() {
   initMenubar()
   initToolbar()
   initSidebar()
+  initOutline()
   initPreview()
   initMarkup()
   initSignature()

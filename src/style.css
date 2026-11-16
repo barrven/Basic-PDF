@@ -368,6 +368,98 @@ button:disabled {
   flex-shrink: 0;
 }
 
+#sidebar-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+#sidebar-tabs button {
+  flex: 1;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+#sidebar-tabs button:hover {
+  background: var(--hover);
+}
+
+#sidebar-tabs button.active {
+  color: var(--text-primary);
+  background: var(--hover-strong);
+}
+
+#thumbnail-list[hidden],
+#outline-list[hidden] {
+  display: none;
+}
+
+#outline-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 4px 12px;
+}
+
+.outline-item {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.outline-item:hover {
+  background: var(--hover);
+}
+
+.outline-item.current {
+  background: rgba(79, 142, 247, 0.10);
+  color: var(--accent);
+}
+
+.outline-caret {
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.outline-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-page {
+  font-family: "DM Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.outline-empty,
+.outline-note {
+  margin: 10px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 #thumbnail-list {
   display: flex;
   flex-direction: column;
