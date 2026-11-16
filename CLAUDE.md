@@ -93,6 +93,7 @@ The text layer is built only for visible (or near-viewport) non-blank pages afte
 | `src/markup.js` | Markup tools from the ribbon: text, rectangle, ellipse, line, freehand. Pointer drawing, text editor, SVG `.markup-layer` per page, click-to-select |
 | `src/markup-save.js` | Draws markup annotations into the saved PDF (pdf-lib, rotation-aware) and onto redaction-flattened pages (canvas) |
 | `src/zoom.js` | Shared zoom step list (50–200%) and `snapZoom()` used by toolbar and wheel zoom |
+| `src/outline.js` | Sidebar Pages / Outline switch. Outline uses the PDF's bookmarks, else headings detected from text size; click jumps to the page, current section follows scrolling |
 | `src/sidebar.js` | Thumbnail list (rendered lazily through the render queue), drag-to-reorder, click selection, context menu, resizable width |
 | `src/preview.js` | Continuous-scroll page stack, lazy canvas + text-layer render and freeing of distant pages, signature/annotation overlays, Ctrl/Cmd+wheel zoom, find highlights |
 | `src/search.js` | Find bar, incremental walker over composed pages, next/prev, highlight coordination |

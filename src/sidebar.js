@@ -334,6 +334,7 @@ function applyContextChoice(choice, idx) {
 }
 
 export function scrollFocusedIntoView() {
+  if (document.getElementById('thumbnail-list')?.hidden) return // outline view is showing
   const el = document.querySelector(
     `#thumbnail-list .thumbnail-item[data-index="${appState.focusedPage}"]`
   )
@@ -341,9 +342,11 @@ export function scrollFocusedIntoView() {
   if (!el || !sidebar) return
   const sRect = sidebar.getBoundingClientRect()
   const eRect = el.getBoundingClientRect()
-  if (eRect.top >= sRect.top && eRect.bottom <= sRect.bottom) return
+  // The tab strip is sticky, so the visible area starts below it.
+  const topEdge = sRect.top + (document.getElementById('sidebar-tabs')?.offsetHeight || 0)
+  if (eRect.top >= topEdge && eRect.bottom <= sRect.bottom) return
   let delta = 0
-  if (eRect.top < sRect.top) delta = eRect.top - sRect.top
+  if (eRect.top < topEdge) delta = eRect.top - topEdge
   else if (eRect.bottom > sRect.bottom) delta = eRect.bottom - sRect.bottom
   sidebar.scrollTop += delta
   document.documentElement.scrollTop = 0

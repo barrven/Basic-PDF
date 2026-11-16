@@ -33,7 +33,12 @@
     <div id="markup-ribbon" hidden></div>
     <div id="workspace">
       <div id="sidebar">
+        <div id="sidebar-tabs" role="tablist" aria-label="Sidebar view">
+          <button type="button" role="tab" data-view="pages" aria-selected="true" title="Page thumbnails">Pages</button>
+          <button type="button" role="tab" data-view="outline" aria-selected="false" title="Section headings">Outline</button>
+        </div>
         <div id="thumbnail-list"></div>
+        <div id="outline-list" hidden></div>
       </div>
       <div id="resize-handle"></div>
       <div id="preview-shell">
