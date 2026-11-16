@@ -289,6 +289,35 @@ fn get_app_info(app: AppHandle) -> HashMap<&'static str, String> {
     ])
 }
 
+/// Native Save / Don't save / Cancel prompt. The renderer cannot use
+/// window.confirm: the dialog plugin replaces it with an async version that
+/// returns a (always truthy) Promise and needs a capability this app
+/// deliberately does not grant. Resolves to "save", "discard" or "cancel".
+#[tauri::command(async)]
+fn prompt_unsaved(app: AppHandle, window: WebviewWindow, message: String) -> String {
+    use tauri_plugin_dialog::MessageDialogResult;
+    let result = app
+        .dialog()
+        .message(message)
+        .title("Unsaved changes")
+        .kind(MessageDialogKind::Warning)
+        .parent(&window)
+        .buttons(MessageDialogButtons::YesNoCancelCustom(
+            "Save".into(),
+            "Don't save".into(),
+            "Cancel".into(),
+        ))
+        .blocking_show_with_result();
+    match result {
+        MessageDialogResult::Custom(label) if label == "Save" => "save",
+        MessageDialogResult::Custom(label) if label == "Don't save" => "discard",
+        MessageDialogResult::Yes => "save",
+        MessageDialogResult::No => "discard",
+        _ => "cancel",
+    }
+    .to_string()
+}
+
 /// Opens the file's parent folder in Explorer with the file selected.
 #[tauri::command]
 fn reveal_in_folder(path: String) -> CmdResult<()> {
@@ -465,6 +494,7 @@ pub fn run() {
             set_dirty,
             get_app_info,
             reveal_in_folder,
+            prompt_unsaved,
             get_theme,
             set_theme,
             window_minimize,

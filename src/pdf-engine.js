@@ -13,15 +13,26 @@ function basename(p) {
   return p.split(/[\\/]/).pop()
 }
 
-function confirmDiscardIfDirty() {
+// Save / Don't save / Cancel before something replaces or closes the document.
+// Resolves true when it is safe to go ahead.
+async function resolveUnsavedChanges(action) {
   if (!appState.filePath || !appState.dirty) return true
-  return window.confirm('You have unsaved changes. Open a different file anyway?')
+  const name = basename(appState.filePath) || 'this document'
+  const choice = await window.nativeAPI.promptUnsaved(
+    `Do you want to save changes to ${name} before ${action}?`,
+  )
+  if (choice === 'cancel') return false
+  if (choice === 'save') {
+    await save()
+    return !appState.dirty // a failed or cancelled save keeps the file open
+  }
+  return true
 }
 
 export async function openFile() {
   try {
     if (appState.loading) return
-    if (!confirmDiscardIfDirty()) return
+    if (!(await resolveUnsavedChanges('opening another file'))) return
     const result = await window.nativeAPI.openFile()
     if (!result) return
     const { path, buffer } = result
@@ -35,7 +46,7 @@ export async function openFile() {
 export async function openPath(filePath) {
   if (!filePath) return
   if (appState.loading) return
-  if (!confirmDiscardIfDirty()) return
+  if (!(await resolveUnsavedChanges('opening another file'))) return
   try {
     await withDocumentLoading(async () => {
       let buffer
@@ -352,10 +363,7 @@ export async function save() {
 
 export async function closeFile() {
   if (!appState.filePath) return
-  if (appState.dirty) {
-    const ok = window.confirm('You have unsaved changes. Close without saving?')
-    if (!ok) return
-  }
+  if (!(await resolveUnsavedChanges('closing'))) return
   clearPdfSources()
   dispatch({ type: 'CLOSE_FILE' })
 }

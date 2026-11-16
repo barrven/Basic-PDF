@@ -37,6 +37,7 @@
       invoke('set_dirty', { dirty: !!dirty }).catch(() => {})
     },
     getAppInfo: () => invoke('get_app_info'),
+    promptUnsaved: (message) => invoke('prompt_unsaved', { message }),
     revealInFolder: (path) => invoke('reveal_in_folder', { path }),
     getTheme: () => invoke('get_theme'),
     setTheme: (preference) => invoke('set_theme', { preference }),
