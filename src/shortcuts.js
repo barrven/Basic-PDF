@@ -5,7 +5,9 @@ import { deleteSelectedPages, rotateSelected } from './toolbar.js'
 import { textSelectionIsActive, textSelectionIsNonCollapsed, selectAllTextInActiveLayer } from './preview.js'
 import { openFindBar, closeFindBar, isFindBarOpen } from './search.js'
 import { closeThemePopover, isThemePopoverOpen } from './theme.js'
-import { closeAboutMenu, closeAboutModal, isAboutMenuOpen, isAboutModalOpen } from './about.js'
+import { closeAboutModal, isAboutModalOpen } from './about.js'
+import { closeMenu, isMenuOpen } from './menubar.js'
+import { getActiveTool, setTool } from './markup.js'
 import { applyHighlightFromSelection, hideAnnotatePopover, isAnnotatePopoverOpen } from './annotate.js'
 
 export function initShortcuts() {
@@ -105,12 +107,16 @@ async function onKeyDown(e) {
       closeThemePopover()
       return
     }
-    if (isAboutMenuOpen()) {
-      closeAboutMenu()
+    if (isMenuOpen()) {
+      closeMenu()
       return
     }
     if (isAboutModalOpen()) {
       closeAboutModal()
+      return
+    }
+    if (getActiveTool()) {
+      setTool(null)
       return
     }
     if (isPlacing()) {

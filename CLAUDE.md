@@ -60,7 +60,7 @@ The toolbar "Add page" button is commented out; blank pages are still available 
 
 **Signatures** are stored as `{ id, pageIndex, x, y, width, height, opacity, dataUrl }` in `appState.signatures`. Coordinates are in pdf.js visual top-left space for the page at its current rotation. `buildOutputDoc()` converts those into pdf-lib's unrotated media-box space (and rotates the image) when embedding. `SET_PAGE_ORDER` / `INSERT_PAGES` remap `pageIndex` by page `id` so stamps follow the page they were placed on. Placed stamps can be dragged and resized with eight handles (aspect ratio locked, min 20pt). `opacity` is always 1: preview and save honor the field, but there is no control that changes it. The saved library (persisted in the shell's settings file) is capped at 20 entries in `src/store.js`; entries can be removed from the library popover. WebP uploads are rasterized to PNG before save.
 
-**Annotations** (`appState.annotations`) are `{ id, type, pageIndex, rects, color }` with `type` `'highlight'` or `'redact'`. Rects use the same visual top-left space as stamps. Select text to show `#annotate-popover` (`src/annotate.js`); `Ctrl/Cmd+H` highlights. Highlights sit under the text layer; redactions sit above it and block select/copy. On save, highlights are multiply-blend rectangles; a page with any redaction is rasterized (isolated pdf.js document at 2×, long edge capped at 3000px) so the covered glyphs are not in the output. `SET_PAGE_ORDER` / `INSERT_PAGES` remap annotation `pageIndex` by page `id`.
+**Annotations** (`appState.annotations`) are `{ id, type, pageIndex, rects, color }` with `type` `'highlight'` or `'redact'`. Drawn markup (`src/markup.js`) uses the same array with `type` `'text' | 'rect' | 'ellipse' | 'line' | 'draw'` and its own geometry fields (`x/y/width/height`, `x1..y2`, `points`, `text`, `color`, `strokeWidth`) instead of `rects`; never assume `rects` exists. Rects use the same visual top-left space as stamps. Select text to show `#annotate-popover` (`src/annotate.js`); `Ctrl/Cmd+H` highlights. Highlights sit under the text layer; redactions sit above it and block select/copy. On save, highlights are multiply-blend rectangles; a page with any redaction is rasterized (isolated pdf.js document at 2×, long edge capped at 3000px) so the covered glyphs are not in the output. `SET_PAGE_ORDER` / `INSERT_PAGES` remap annotation `pageIndex` by page `id`.
 
 ### Preview
 
@@ -88,7 +88,10 @@ The text layer is built only for visible (or near-viewport) non-blank pages afte
 | `src/main.js` | Boot, render loop, toast, error modal, document-loading overlay, dirty sync to the shell, OS file-open hookup |
 | `src/renderer.js` | pdf.js wrapper — load/clear sources, page fetch, text-content cache, CMap/standard-font URLs, blank-page helper, isolated docs for redaction flatten, the shared render queue (`scheduleRender`) |
 | `src/pdf-engine.js` | pdf-lib wrapper — open, save, saveAs, close, OS `openPath`, `buildOutputDoc` (highlights, redaction flatten, stamps) |
-| `src/toolbar.js` | Toolbar DOM, button wiring, zoom, insert/delete/rotate |
+| `src/menubar.js` | Title-bar File / Edit / Help dropdown menus (open, save, undo/redo, find, page ops, About) |
+| `src/toolbar.js` | Toolbar (Markup toggle, page counter, zoom), expandable markup ribbon (placeholder tools + Signature), insert/delete/rotate helpers |
+| `src/markup.js` | Markup tools from the ribbon: text, rectangle, ellipse, line, freehand. Pointer drawing, text editor, SVG `.markup-layer` per page, click-to-select |
+| `src/markup-save.js` | Draws markup annotations into the saved PDF (pdf-lib, rotation-aware) and onto redaction-flattened pages (canvas) |
 | `src/zoom.js` | Shared zoom step list (50–200%) and `snapZoom()` used by toolbar and wheel zoom |
 | `src/sidebar.js` | Thumbnail list (rendered lazily through the render queue), drag-to-reorder, click selection, context menu, resizable width |
 | `src/preview.js` | Continuous-scroll page stack, lazy canvas + text-layer render and freeing of distant pages, signature/annotation overlays, Ctrl/Cmd+wheel zoom, find highlights |
@@ -97,7 +100,7 @@ The text layer is built only for visible (or near-viewport) non-blank pages afte
 | `src/signature.js` | Signature modal (draw/upload), placement mode, library popover (including delete) |
 | `src/store.js` | Signature library persistence (through `window.nativeAPI` store calls) |
 | `src/theme.js` | Display mode (system / light / dark), title-bar popover, `data-theme` on `<html>` |
-| `src/about.js` | Title-bar app-name menu and About modal (`nativeAPI.getAppInfo()`) |
+| `src/about.js` | About modal, opened from Help → About (`nativeAPI.getAppInfo()`) |
 | `src/shortcuts.js` | Global keyboard shortcuts |
 | `src-tauri/src/lib.rs` | Rust shell: Tauri commands, settings file, context menu, theme, frameless-window commands, close prompt |
 | `src-tauri/src/bridge.js` | `window.nativeAPI` on top of Tauri `invoke`; caption buttons and title-bar drag |

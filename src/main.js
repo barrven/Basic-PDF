@@ -9,6 +9,8 @@ import { initSearch, onSearchDocumentChanged } from './search.js'
 import { initOsFileOpen } from './pdf-engine.js'
 import { initTheme } from './theme.js'
 import { initAbout } from './about.js'
+import { initMenubar, updateMenubar } from './menubar.js'
+import { initMarkup } from './markup.js'
 
 // ─────────── Toast ───────────
 
@@ -143,6 +145,7 @@ export function render() {
   updateLoadingOverlay()
   // Toolbar enable/disable depends on lots of things; just re-evaluate.
   updateToolbar()
+  updateMenubar()
 
   prevState = {
     pagesRef: appState.pages,
@@ -175,9 +178,11 @@ function syncDirtyToMain() {
 function init() {
   initTheme()
   initAbout()
+  initMenubar()
   initToolbar()
   initSidebar()
   initPreview()
+  initMarkup()
   initSignature()
   initAnnotate()
   initSearch()

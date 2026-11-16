@@ -2,6 +2,7 @@ import { PDFDocument, degrees, rgb, BlendMode } from '../node_modules/pdf-lib/di
 import { appState, dispatch, PRIMARY_SOURCE_ID, createPageEntry, normalizeRotation } from './state.js'
 import { setPrimarySource, clearPdfSources, openIsolatedPdf } from './renderer.js'
 import { showToast, showErrorModal, withDocumentLoading } from './main.js'
+import { isMarkup, embedMarkupFont, drawMarkupOnPdfPage, drawMarkupOnCanvas } from './markup-save.js'
 
 const HIGHLIGHT_RGB = { r: 1, g: 229 / 255, b: 102 / 255 }
 
@@ -198,6 +199,8 @@ async function rasterizeRedactedPage(pdfJsDoc, entry, pageIndex) {
     ctx.restore()
   }
 
+  drawMarkupOnCanvas(ctx, appState.annotations.filter((a) => isMarkup(a) && a.pageIndex === pageIndex), scale)
+
   for (const sig of appState.signatures) {
     if (sig.pageIndex !== pageIndex) continue
     const img = await loadImage(sig.dataUrl)
@@ -227,6 +230,7 @@ async function buildOutputDoc() {
   const srcDocs = new Map() // sourceId -> pdf-lib PDFDocument
   const rasterDocs = new Map() // sourceId -> isolated pdf.js PDFDocumentProxy
   const flattened = new Set()
+  let markupFont = null
   async function getSrcDoc(sourceId) {
     if (srcDocs.has(sourceId)) return srcDocs.get(sourceId)
     const bytes = await getSourceBytes(sourceId)
@@ -248,6 +252,7 @@ async function buildOutputDoc() {
       const pageAnnots = appState.annotations.filter((a) => a.pageIndex === pageIndex)
       const highlights = pageAnnots.filter((a) => a.type === 'highlight')
       const redacts = pageAnnots.filter((a) => a.type === 'redact')
+      const markups = pageAnnots.filter(isMarkup)
       const canFlatten = redacts.length > 0 && entry.originalIndex !== -1 && entry.sourceId
 
       if (canFlatten) {
@@ -292,6 +297,10 @@ async function buildOutputDoc() {
         drawAnnotRectsOnPage(pageToAdd, redacts, {
           color: rgb(0, 0, 0),
         })
+      }
+      if (markups.length) {
+        markupFont ??= await embedMarkupFont(newDoc)
+        drawMarkupOnPdfPage(pageToAdd, markups, markupFont)
       }
     }
 

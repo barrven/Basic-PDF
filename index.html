@@ -24,12 +24,13 @@
   </head>
   <body>
     <div id="titlebar">
-      <button type="button" id="app-name" aria-haspopup="menu" aria-expanded="false" aria-controls="about-popover" title="Basic PDF">Basic PDF</button>
+      <div id="menubar" role="menubar" aria-label="Application menu"></div>
       <div id="filename"></div>
       <div id="titlebar-actions"></div>
       <div id="window-controls-spacer"></div>
     </div>
     <div id="toolbar"></div>
+    <div id="markup-ribbon" hidden></div>
     <div id="workspace">
       <div id="sidebar">
         <div id="thumbnail-list"></div>
@@ -50,7 +51,7 @@
           </div>
           <div id="empty-state">
             <h2>No PDF open</h2>
-            <p>Click "Open" in the toolbar or press Ctrl/Cmd+O to load a file.</p>
+            <p>Use File → Open or press Ctrl/Cmd+O to load a file.</p>
           </div>
         </div>
       </div>
@@ -140,7 +141,7 @@
     </div>
     <div id="sig-popover" hidden></div>
     <div id="theme-popover" hidden></div>
-    <div id="about-popover" hidden></div>
+    <div id="menu-popover" hidden></div>
     <div id="toast" hidden></div>
     <script type="module" src="src/main.js"></script>
   </body>

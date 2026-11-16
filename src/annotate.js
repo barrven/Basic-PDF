@@ -196,7 +196,7 @@ function expandRects(rects, type) {
 function overlappingAnnotations(draft) {
   if (!draft) return []
   return appState.annotations.filter((a) => {
-    if (a.pageIndex !== draft.pageIndex) return false
+    if (a.pageIndex !== draft.pageIndex || !a.rects) return false
     return a.rects.some((ar) => draft.rects.some((dr) => rectsOverlap(ar, dr)))
   })
 }
