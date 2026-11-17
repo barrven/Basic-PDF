@@ -1,5 +1,7 @@
 # Todos
 
+Nothing open. Add new items below.
+
 - [x] add markdown features: text entry, line drawing
 - [x] add text highlighting
 - [x] add redaction

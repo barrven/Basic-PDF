@@ -12,7 +12,14 @@ npm run audit      # npm audit --audit-level=high
 
 Building needs Rust (stable, `x86_64-pc-windows-msvc`) and the Visual Studio C++ Build Tools with a Windows SDK. The Tauri CLI is a dev dependency. See `src-tauri/README.md`.
 
-There is no JavaScript test suite and no linter configured. The Rust signing code has unit tests: `cd src-tauri && cargo test --lib`. `.github/workflows/security.yml` runs `npm audit --audit-level=high` on push, pull request, and weekly (Monday 08:00 UTC).
+There is no linter configured. Tests:
+
+```bash
+npm test             # renderer regression suite in test/ (node:test, Node 22+)
+npm run test:rust    # signing code: cargo test --lib in src-tauri
+```
+
+`.github/workflows/test.yml` runs both on push and pull request; `.github/workflows/security.yml` runs `npm audit --audit-level=high` on push, pull request, and weekly (Monday 08:00 UTC). See the Tests section below and `test/README.md`.
 
 ### App name and version
 
@@ -80,7 +87,7 @@ The text layer is built only for visible (or near-viewport) non-blank pages afte
 
 The renderer must not use `window.confirm`: `tauri-plugin-dialog` replaces it with an async version that returns a Promise (always truthy) and needs a capability this app does not grant. Use `nativeAPI.promptUnsaved` (Save / Don't save / Cancel) or `nativeAPI.confirm` instead.
 
-`dirty` is set on page/signature/annotation edits. Opening another file or closing the current file prompts in the renderer (`window.confirm`). Closing the window prompts in the shell: the renderer calls `setDirty` on every dirty change, and the `CloseRequested` window event shows a native dialog when the dirty flag is set.
+`dirty` is set on page/signature/annotation/form edits. Opening another file or closing the current file prompts through `resolveUnsavedChanges()` in `src/pdf-engine.js` (`nativeAPI.promptUnsaved`: save, discard or cancel; a cancelled or failed save keeps the file open). Closing the window prompts in the shell: the renderer calls `setDirty` on every dirty change, and the `CloseRequested` window event shows a native dialog when the dirty flag is set.
 
 ### Module responsibilities
 
@@ -131,7 +138,21 @@ As-built notes (these features are implemented):
 - `features/feature-forms-plan.md` — AcroForm field filling (implemented; "As built" section first, original plan after)
 - `features/feature-digital-signature-guide.md` — cryptographic (CAdES) signatures signed in the Rust shell (implemented; "As built" section first, original guide after)
 
-Open product ideas (not designed, not implemented) live in `todos.md`: annotation-style drawing/text entry, a settings gear.
+`todos.md` tracks the backlog; everything listed there is currently done.
+
+### Tests
+
+`test/` holds the renderer regression suite (`npm test`). It uses Node's built-in runner and stubs the browser-only modules (`main.js`, `renderer.js`, `preview.js`, `signature.js`, pdf.js) via `mock.module`, so state, the save pipeline and the pure helpers run unmodified. Add a test whenever behaviour changes; when fixing a bug, add the failing test first.
+
+| File | Covers |
+|------|--------|
+| `test/state.test.mjs` | Every reducer action, page-identity remapping, undo/redo, dirty flag |
+| `test/units.test.mjs` | Zoom, find hits, rect merging/overlap, find-vs-redaction, markup coordinate mapping, signature library |
+| `test/engine.test.mjs` | `saveDocument` / `closeFile` / `loadFromBytes` end to end: page assembly, rotation, highlights, redaction fallback, markup, stamps, forms, signature placeholder, unsaved prompts |
+| `test/contracts.test.mjs` | JS/Rust/HTML/build-script consistency: version in four places, `nativeAPI` vs bridge vs Rust commands, signing placeholder, `COPIES`, element ids, CSP |
+| `test/helpers/` | `mocks.mjs` (module stubs, `fake.pdfjs`, `installNativeAPI`), `pdf.mjs` (PDF fixtures and inspection) |
+
+Not covered (check by hand in `npm start`): preview rendering and overlays, drag/resize, redaction flattening to an image, native dialogs, real signing over IPC. A new source module that the tested code imports and that touches `document` at import time needs a stub in `installMocks()`; a new native command must be added to `bridge.js` and `lib.rs` together (the contract test fails otherwise).
 
 ### Build output
 

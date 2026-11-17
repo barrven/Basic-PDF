@@ -29,6 +29,8 @@ This sits on top of the pdf.js text layer (`feature-select-text.md`). It is not 
 
 Coordinates are pdf.js visual top-left space for the page at its current rotation — the same space as signature stamps. `rects` is one box per line of the selection (adjacent same-line boxes are merged).
 
+Drawn markup (`type` `'text' | 'rect' | 'ellipse' | 'line' | 'draw'`) shares the same array but has its own geometry fields instead of `rects`, so code that touches `rects` must check the type first. It is saved by `src/markup-save.js`.
+
 They are session edits, not round-tripped PDF annotation objects. Opening a file starts with an empty list; existing highlight/redact markup already in the PDF is left as page content.
 
 ---
@@ -41,7 +43,9 @@ Each `.preview-page` stack is:
 2. `.annot-highlight-layer` (pointer-events none; rects use `mix-blend-mode: multiply` with no extra opacity so glyphs stay dark like the saved PDF)
 3. `.textLayer`
 4. `.annot-redact-layer` (pointer-events on the black rects)
-5. `.signature-overlay-layer`
+5. `.annot-form-layer` (fillable form widgets; hidden where a redaction covers them)
+6. `.markup-layer` (drawn markup: text, shapes, lines; see `src/markup.js`)
+7. `.signature-overlay-layer`
 
 `src/annotate.js` turns `window.getSelection()` + `Range.getClientRects()` into PDF-point rects via the page view’s scale. `src/preview.js` paints the overlay DOM and, after the text layer paints, disables pointer events / select on spans that intersect a redaction.
 
@@ -55,7 +59,7 @@ The popover is `#annotate-popover` (`position: fixed`). `mousedown` is `preventD
 
 **Highlights only (no redaction on that page).** Copy the source page, set rotation, draw yellow rectangles with `BlendMode.Multiply` using the same visual→pdf-lib mapping as stamps.
 
-**Any redaction on that page.** Rasterize a fresh pdf.js document (isolated from the preview’s live page, so the two renders cannot cancel each other) at 2×, cap the long edge at 3000px. Paint highlights (multiply), stamps, then black redaction rects onto the canvas. Replace the output page with that PNG at the visual page size, rotation 0. Underlying glyphs are not in the saved file.
+**Any redaction on that page.** Rasterize a fresh pdf.js document (isolated from the preview’s live page, so the two renders cannot cancel each other) at 2×, cap the long edge at 3000px. Paint the page (with any form values the user entered), highlights (multiply), markup, stamps, then black redaction rects onto the canvas. Replace the output page with that PNG at the visual page size, rotation 0. Underlying glyphs are not in the saved file.
 
 If rasterization fails, the save still completes: vector copy + multiply highlights + opaque black rectangles (visual cover only). That fallback is logged.
 
