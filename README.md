@@ -5,13 +5,18 @@ A lightweight desktop PDF editor built with Tauri (Rust + the system WebView) �
 ## Features
 
 - Open, edit, save, and close PDF files
+- File / Edit / Help menus in the title bar, including **Open Parent Folder** (reveals the file in Explorer) and **Copy File Path**
 - Open a PDF by double-clicking it when Basic PDF is the default reader (each launch is its own window)
 - Continuous-scroll preview of all pages (fit-to-width or stepped zoom 50–200%)
 - Stays responsive on large PDFs: pages and thumbnails are rendered on demand, nearest the view first
 - Zoom the preview with the toolbar or Ctrl/Cmd+mouse wheel (around the cursor)
 - Select and copy text from pages
 - Highlight selected text (Ctrl/Cmd+H) or redact it; both are written on save
+- **Markup ribbon** (the Markup button): text, rectangle, ellipse, line and freehand drawing with a color and line-thickness picker, saved into the PDF
+- **Fill in forms**: text fields, checkboxes, radio buttons, dropdowns and list boxes in AcroForm PDFs; values are saved and the fields stay editable (XFA forms are not supported)
+- **Cryptographic signatures**: optionally sign a placed stamp with a certificate (self-signed, or imported from a `.p12` / `.pfx`); the file shows if it is changed afterwards. Keys are stored encrypted for your Windows account
 - Find in document (Ctrl/Cmd+F) with match count, next/previous, and on-page highlights
+- **Outline view** in the sidebar (switch from Pages): the PDF's bookmarks, or headings detected from text size
 - Reorder pages by dragging thumbnails
 - Rotate, insert, duplicate, and delete pages
 - Insert blank pages (thumbnail context menu) or pages from other PDFs
@@ -43,7 +48,16 @@ npm run audit   # npm audit --audit-level=high
 
 The build target and the `.pdf` file association are configured in `src-tauri/tauri.conf.json`. Only the Windows NSIS installer is set up. The installed app and Start menu shortcut are named **Basic PDF**.
 
-CI runs `npm audit --audit-level=high` on push, pull request, and a weekly schedule (`.github/workflows/security.yml`).
+## Testing
+
+```bash
+npm test             # renderer regression suite (Node 22+, no extra dependencies)
+npm run test:rust    # signing code in the Rust shell
+```
+
+The renderer suite covers the state store, the save pipeline (page assembly, rotation, highlights, redaction fallback, markup, stamps, forms, the signature placeholder), the unsaved-changes flow, and cross-file contracts such as the JS/Rust command list and the version number. See `test/README.md` for what it can and cannot see and how to add tests.
+
+CI runs both suites (`.github/workflows/test.yml`) and `npm audit --audit-level=high` (`.github/workflows/security.yml`) on push and pull request; the audit also runs weekly.
 
 ## Keyboard shortcuts
 
@@ -62,7 +76,7 @@ CI runs `npm audit --audit-level=high` on push, pull request, and a weekly sched
 | `ArrowUp` / `ArrowDown` | Previous / next page |
 | `PageUp` / `PageDown` | Scroll the preview by about one viewport |
 | `Ctrl/Cmd+mouse wheel` | Zoom the preview in / out |
-| `Escape` | Close the find bar, then the highlight/redact popover, then other popovers and the About dialog; then cancel signature placement or deselect |
+| `Escape` | Close the find bar, then the highlight/redact popover, then other popovers and the About dialog; then leave the active markup tool, cancel signature placement or deselect |
 
 In the find bar, Enter goes to the next match and Shift+Enter to the previous. Matches wrap at the ends.
 
@@ -70,21 +84,29 @@ Right-click a thumbnail for delete, rotate, duplicate, and insert blank page.
 
 Select text on a page to get the Highlight / Redact popover. A redacted page is saved as an image, so the covered text cannot be recovered from the file.
 
+### Signing a document
+
+1. Open the saved-signatures menu (▾ next to **Signature** in the Markup ribbon) and choose **Create self-signed…** or **Import…** (a `.p12` / `.pfx` with its password).
+2. When adding a signature, tick **Also apply a cryptographic signature** and pick the identity. Place the stamp; it shows a lock badge.
+3. Save. Only one cryptographic signature per document is supported, and no timestamp is added. Self-signed certificates are not trusted by other people's PDF readers: they show the signature as intact but the signer as unverified.
+
+Opening a PDF that already has a digital signature shows a notice: saving rebuilds the file, which removes that signature.
+
 ## Architecture
 
 The app is split between a Rust shell and a web renderer:
 
-- **Shell** (`src-tauri/src/lib.rs`) owns native OS access — file dialogs, filesystem I/O, context menus, persistent settings (a JSON file in the app config folder), display theme, app info for the About dialog, and the PDF path the OS passes when the app is launched as the default reader. It also prompts on window close if the renderer has unsaved changes. Multiple instances are allowed.
+- **Shell** (`src-tauri/src/lib.rs`, `signing.rs`) owns native OS access — file dialogs, filesystem I/O, context menus, persistent settings (a JSON file in the app config folder), display theme, app info for the About dialog, revealing a file in Explorer, native confirmation prompts, and the PDF path the OS passes when the app is launched as the default reader. It prompts on window close if the renderer has unsaved changes. It also holds the signing identities (private keys protected with Windows DPAPI) and produces the CMS/CAdES signature. Multiple instances are allowed.
 - **Bridge** (`src-tauri/src/bridge.js`) is injected before any page script and exposes those commands as `window.nativeAPI`, the renderer's only route to the OS. It also draws the window's minimize / maximize / close buttons.
 - **Renderer** (`src/`) uses two PDF libraries with distinct roles:
   - [pdf.js](https://mozilla.github.io/pdf.js/) renders pages to `<canvas>` for on-screen display and builds a text layer for select, copy, and find.
-  - [pdf-lib](https://pdf-lib.js.org/) assembles the final output document at save time — copying pages, applying rotations, drawing highlights, flattening redacted pages to images, and embedding signatures.
+  - [pdf-lib](https://pdf-lib.js.org/) assembles the final output document at save time — copying pages, applying rotations, writing form values, drawing highlights and markup, flattening redacted pages to images, embedding signature stamps, and reserving the placeholder the shell fills with the cryptographic signature.
 
 State lives in a single store (`src/state.js`) mutated only through `dispatch(action)`, with a single `render()` function in `src/main.js` reacting to changes.
 
 The renderer has no bundler. Before each run or build, `src-tauri/scripts/assemble-frontend.mjs` copies it, with only the pdf.js and pdf-lib files it needs, into the folder Tauri serves.
 
-See `CLAUDE.md` for a full module-by-module breakdown and `src-tauri/README.md` for the shell. `features/features.md` is the functional specification; text-layer, find, and highlight/redaction details are in `features/feature-select-text.md`, `features/feature-search-text.md`, and `features/feature-annotate.md`.
+See `CLAUDE.md` for a full module-by-module breakdown and `src-tauri/README.md` for the shell. `features/features.md` is the functional specification; text-layer, find, and highlight/redaction details are in `features/feature-select-text.md`, `features/feature-search-text.md`, and `features/feature-annotate.md`. Forms and cryptographic signatures have their own notes: `features/feature-forms-plan.md` and `features/feature-digital-signature-guide.md` (each starts with an "As built" section).
 
 ## License
 

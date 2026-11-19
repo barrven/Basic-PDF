@@ -7,10 +7,12 @@ Functional specification of a desktop PDF editor, extracted from the current imp
 - Open a PDF via the file dialog or the OS "open with" association (double-click). Dragging a PDF onto the window does not open it.
 - Each file opens in its own top-level window; no single-instance restriction — multiple windows/files can be open at once.
 - Save in place, or Save As to a new path.
+- File menu actions beyond open/save: insert pages from another PDF, "Open Parent Folder" (reveals the file in the OS file manager), and "Copy File Path" (to the clipboard).
+- Opening a PDF that already carries a digital signature shows a dismissible notice that saving will remove it (saving rebuilds the file).
 - Remembers the last-used folder across Open and Save As dialogs; falls back to the OS default if that folder no longer exists.
 - Close file / close window prompts to save when there are unsaved changes.
 - Tracks a "dirty" (unsaved changes) flag driven by document edits (page changes, signatures, annotations).
-- Undo/redo history covering page layout, signature, and annotation edits (bounded history depth, e.g. last 50 steps). Not covered by undo: zoom level, selection state, loading/UI state.
+- Undo/redo history covering page layout, signature, annotation (highlight, redaction, markup) and form-field edits (bounded history depth, e.g. last 50 steps; typing in a form field coalesces into one step). Not covered by undo: zoom level, selection state, loading/UI state.
 
 ## 2. Page viewing
 
@@ -21,6 +23,7 @@ Functional specification of a desktop PDF editor, extracted from the current imp
 - Thumbnails are rendered on demand as they scroll into the sidebar, after the pages in view.
 - Thumbnail sidebar showing all pages; clicking a thumbnail scrolls the main preview to that page.
 - Keyboard/page navigation: next/previous page, page-up/page-down scroll by roughly one viewport.
+- Sidebar with two views: page thumbnails, and an outline. The outline uses the PDF's own bookmarks when present, otherwise headings detected from text size; clicking an entry jumps to its page, entries collapse, and the current section follows scrolling.
 - A "focused page" concept — the page nearest the top of the viewport drives thumbnail highlighting and single-page context (e.g. rotate-current-page).
 
 ## 3. Page manipulation
@@ -63,6 +66,29 @@ Functional specification of a desktop PDF editor, extracted from the current imp
 - Placed signatures are embedded into the output PDF as images at save time, correctly transformed into the page's rotation/coordinate space.
 - Signature placements track page identity through reorder/insert/delete like other overlays.
 
+### Cryptographic (digital) signatures
+
+- A placed stamp can optionally also carry a cryptographic signature (ETSI CAdES detached, SHA-256). The saved file shows if it is modified afterwards.
+- Signing identities: create a self-signed certificate (ECDSA P-256) or import a `.p12` / `.pfx` (RSA or P-256). Identities are listed with expiry and a self-signed tag, and can be removed. Private keys are stored encrypted for the OS user account (Windows DPAPI) and never reach the renderer; a PFX password is used once and not stored.
+- At most one cryptographic signature per document; no timestamping, no revocation checks, no incremental updates. An expired certificate cannot be used.
+- Signing is the last step of saving. The stamp shows a lock badge before saving.
+- Self-signed signatures are intact but unverified in other readers.
+
+## 6b. Markup tools
+
+- A Markup ribbon, expanded from a toolbar button, holds: Highlight and Redact (act on selected text), Text, Rectangle, Ellipse, Line and Freehand draw (click/drag on a page), a color picker and a line-thickness picker, and the Signature button with its saved-signatures menu.
+- Text: click the page, type, click away to finish (Ctrl+Enter also finishes). Shapes and lines are stroke-only. Items can be selected by clicking and deleted with Delete/Backspace.
+- Markup is saved as real vector content in the PDF (text uses a standard Helvetica font, so characters outside Latin-1 are replaced with "?"). On a page that is flattened for redaction, markup is painted into the image.
+- Escape leaves the active tool. Markup follows page identity like other overlays and is covered by undo/redo.
+
+## 6c. Form filling
+
+- Fillable AcroForm fields are shown as live controls over the page: text (single and multi-line), checkbox, radio group, dropdown, list box. Read-only and hidden fields are not offered. XFA forms are detected and reported as unsupported.
+- Values are kept per field name (not per page) so they survive reorder, duplicate and delete, and are written into the saved PDF with refreshed appearances. The saved PDF's form stays editable.
+- Pages inserted from another PDF bring their own fields.
+- A page that is both filled in and redacted is flattened with the entered values visible; its fields are no longer live afterwards. A field covered by a redaction is hidden in the preview.
+- Deleting a page never carries that page's content into the file through a field shared with a kept page.
+
 ## 7. Appearance / theming
 
 - Light, dark, and "follow OS" display modes, switchable at runtime.
@@ -70,6 +96,7 @@ Functional specification of a desktop PDF editor, extracted from the current imp
 
 ## 8. Application chrome & info
 
+- Windows-style menu bar in the title bar: File (Open, Save, Save As, Insert PDF, Open Parent Folder, Copy File Path, Close File), Edit (Undo, Redo, Find, Rotate left/right, Delete page, Add signature) and Help (About). Items are enabled according to whether a file is open; hovering switches between open menus.
 - Custom "About" dialog showing app name, version, description, author, license, and copyright.
 - Custom title bar with the app name, the open file's name (with an unsaved-changes marker), the display-mode control, and minimize / maximize / close buttons; drag it to move the window, double-click to maximize.
 - Right-click context menus for page/thumbnail actions (rotate, insert blank page, duplicate, delete, etc.).
@@ -77,21 +104,25 @@ Functional specification of a desktop PDF editor, extracted from the current imp
 ## 9. Keyboard shortcuts
 
 A full shortcut set for power-user workflows, at minimum:
-Open, Save, Save As, Undo, Redo, Find, Highlight-selection, Rotate left/right, Select-all (context-sensitive), Delete selection, Previous/Next page, Page-up/Page-down scroll, Zoom in/out via modifier+wheel, Escape to back out of the current mode in a defined priority order (find bar → annotate popover/selection → theme/about popovers → placement/deselect).
+Open, Save, Save As, Undo, Redo, Find, Highlight-selection, Rotate left/right, Select-all (context-sensitive), Delete selection, Previous/Next page, Page-up/Page-down scroll, Zoom in/out via modifier+wheel, Escape to back out of the current mode in a defined priority order (find bar → annotate popover/selection → theme/about popovers → active markup tool / placement / deselect).
 
 ## 10. Safety & data integrity
 
-- Confirmation prompt before discarding unsaved changes, both when switching/closing documents within the app and when closing the application window itself.
+- Confirmation prompt (Save / Don't save / Cancel) before discarding unsaved changes, both when switching/closing documents within the app and when closing the application window itself. A cancelled or failed save keeps the document open. These prompts are native dialogs, not browser `confirm()`.
 - Output PDF assembly must not silently corrupt or drop content: rotations, highlights, redaction-flattening, and embedded signature images all need to compose correctly regardless of edit order.
 - Redaction must be a genuine security/privacy feature (content unrecoverable from the saved file), not merely a UI overlay — this should be treated as a security-relevant requirement in any reimplementation.
 
 ## 11. Explicitly out of scope today (candidate future features)
 
 Not implemented in the current app; worth considering when exploring a new design, but not required for parity:
-- Freehand drawing / markup annotations beyond highlight & redact.
-- Free-text annotation entry ("markdown"-style text boxes) on pages.
-- AcroForm field detection and filling (interactive form fields) — a design note exists for this but it is unimplemented.
+- Editing existing PDF text or images; OCR for scanned pages.
+- Markup beyond the listed tools: arrows, sticky notes/comments, fonts and sizes other than the default, moving or resizing a shape after it is drawn, highlight color presets.
+- Saving highlights/redactions as standard PDF annotation objects (they are burned into page content).
+- Flatten-on-save for form fields; XFA forms.
+- Multiple cryptographic signatures, timestamping, revocation checking, preserving an existing signature when saving.
+- Drag-and-drop of a PDF onto the window.
 - An in-app settings/preferences panel (currently no dedicated settings UI beyond theme).
+- macOS and Linux builds.
 
 ## 12. Non-functional characteristics worth preserving
 
@@ -100,4 +131,5 @@ Not implemented in the current app; worth considering when exploring a new desig
 - Windows only today (NSIS installer, WebView2). No macOS or Linux build is configured.
 - Should perform acceptably on large multi-hundred-page PDFs (motivates lazy/virtualized rendering and incremental search rather than eager whole-document processing).
 - Two distinct concerns exist in the current design and probably should remain separable regardless of stack: (a) *rendering* pages to pixels for on-screen display + extracting text/positions for selection/search, and (b) *assembling/writing* the final output PDF (copying pages, applying rotation, drawing highlight boxes, flattening redacted pages to images, embedding signature images). A new implementation may unify these in one library/engine or keep them split — that tradeoff is one of the things worth evaluating.
-- Must not leak "deleted"/redacted content into the saved file even when the rendering layer that displays it is only visual (canvas-based).
+- Must not leak "deleted"/redacted content into the saved file even when the rendering layer that displays it is only visual (canvas-based). This includes content reachable only through a form field shared with a page that was kept.
+- Private signing keys stay in the native shell and are encrypted at rest; the renderer only ever sees identity metadata.

@@ -1,3 +1,4 @@
+import { renderFormLayer, applyFormRedactionLocks } from './forms.js'
 import { TextLayer } from '../node_modules/pdfjs-dist/build/pdf.mjs'
 import { appState, dispatch } from './state.js'
 import { getPage, getPageTextContent, drawBlankPlaceholder, PAGE_SIZE_A4, visualPageSize, scheduleRender, RENDER_PRIORITY } from './renderer.js'
@@ -289,6 +290,7 @@ function evictDistantPages() {
     try { view.textLayer?.cancel() } catch {}
     view.textLayer = null
     view.textLayerEl.replaceChildren()
+    view.formLayer?.replaceChildren()
     view.canvas.width = 0
     view.canvas.height = 0
     view.renderedToken = -1
@@ -413,6 +415,10 @@ async function renderPreviewInner() {
     redactLayer.className = 'annot-redact-layer'
     el.appendChild(redactLayer)
 
+    const formLayer = document.createElement('div')
+    formLayer.className = 'annot-form-layer'
+    el.appendChild(formLayer)
+
     const overlay = document.createElement('div')
     overlay.className = 'signature-overlay-layer'
     el.appendChild(overlay)
@@ -427,6 +433,7 @@ async function renderPreviewInner() {
       textLayerPainted: false,
       highlightLayer,
       redactLayer,
+      formLayer,
       overlay,
       scale,
       pdfWidth: size.width,
@@ -489,6 +496,9 @@ async function renderPageCanvas(index, token) {
     dest.drawImage(offscreen, 0, 0, view.canvas.width, view.canvas.height)
     view.renderedToken = token
     await renderPageTextLayer(view, viewport, token, entry)
+    if (token === lastRenderToken) {
+      await renderFormLayer(view, page, viewport, entry).catch((err) => console.error(err))
+    }
     evictDistantPages()
   } catch (err) {
     if (token !== lastRenderToken) return
@@ -766,7 +776,8 @@ export function renderSignatureOverlays() {
     for (const sig of appState.signatures) {
       if (sig.pageIndex !== view.index) continue
       const div = document.createElement('div')
-      div.className = 'sig-overlay'
+      div.className = sig.digital ? 'sig-overlay sig-digital' : 'sig-overlay'
+      if (sig.digital) div.title = 'Will be cryptographically signed when saved'
       div.dataset.id = sig.id
       div.style.left = sig.x * view.scale + 'px'
       div.style.top = sig.y * view.scale + 'px'
@@ -870,6 +881,7 @@ export function renderAnnotationOverlays() {
       scale,
     )
     if (view.textLayerPainted) applyRedactionTextLocks(view)
+    applyFormRedactionLocks(view)
   }
 }
 

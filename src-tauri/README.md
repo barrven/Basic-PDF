@@ -31,7 +31,8 @@ Both commands first run `scripts/assemble-frontend.mjs`. After editing anything 
 
 | File | Role |
 |---|---|
-| `src/lib.rs` | The shell: file dialogs, file read/write, context menu, settings store, theme, About info, unsaved-changes close prompt, PDF path from argv, frameless-window commands |
+| `src/lib.rs` | The shell: file dialogs, file read/write, context menu, settings store, theme, About info, unsaved-changes prompts (close and in-app), reveal-in-folder, native confirm, PDF path from argv, frameless-window commands |
+| `src/signing.rs` | Signing identities (self-signed generation, PFX import, DPAPI-protected storage) and `sign_pdf`: builds the CMS/CAdES SignedData and patches `/ByteRange` + `/Contents`. Has unit tests (`cargo test --lib`) |
 | `src/bridge.js` | Injected before any page script. Defines `window.nativeAPI` on top of Tauri's `invoke`, and draws the minimize / maximize / close buttons inside `#window-controls-spacer` |
 | `scripts/assemble-frontend.mjs` | Builds `frontend-dist/`, the folder Tauri embeds |
 | `tauri.conf.json`, `capabilities/default.json` | App config, NSIS target, `.pdf` file association |
@@ -62,8 +63,28 @@ The originals are never modified. If the renderer starts importing another libra
 | `setDirty` | `set_dirty` + the `CloseRequested` prompt |
 | `getTheme` / `setTheme` / `onThemeUpdated` | `get_theme` / `set_theme` / `theme-updated` event |
 | `getAppInfo` | `get_app_info` |
+| `revealInFolder` | `reveal_in_folder` (selects the file in Explorer) |
+| `promptUnsaved` | `prompt_unsaved` (native Save / Don't save / Cancel; resolves `"save"`, `"discard"` or `"cancel"`) |
+| `confirm` | `confirm_action` (native OK / Cancel with a custom OK label) |
+| `listIdentities` / `removeIdentity` | `list_identities` / `remove_identity` |
+| `generateSelfSignedIdentity` / `importIdentity` | `generate_self_signed_identity` / `import_identity` (PFX bytes and password; the password is not stored) |
+| `signPdf` | `sign_pdf` (raw PDF bytes in, signed bytes out, identity id in a header) |
 | `onOpenPath` | `take_pending_open_path` (pulled when the callback is registered) |
 | caption buttons and title-bar drag | `window_minimize`, `window_toggle_maximize`, `window_is_maximized`, `window_close`, `window_start_drag` |
+
+## Signing
+
+- Identities live in `identities.json` in the app config folder. Each record's key material (PKCS#8 key and certificate chain) is protected with Windows DPAPI (`CryptProtectData`) and only decrypted inside `sign_pdf`. Protected storage is Windows-only; other platforms return an error.
+- The renderer reserves a placeholder (`/ByteRange [ 0 1234567890 1234567890 1234567890 ]` and a 12288-byte zero-filled `/Contents`) and saves without object streams; `sign_pdf` finds the placeholder by that exact text, hashes everything outside `/Contents`, and writes the CMS blob in. The placeholder text must match `src/pdf-signature.js`; a test in `test/contracts.test.mjs` checks it.
+- Dependencies are compiled at `opt-level = 3` even in dev builds, because pure-Rust crypto is too slow unoptimised. The first `npm start` after pulling is therefore slower.
+
+## Tests
+
+```bash
+cargo test --lib --manifest-path src-tauri/Cargo.toml     # from the repo root: npm run test:rust
+```
+
+Covers P-256 and RSA signing (verified structurally), PFX import, the DPAPI round-trip, signing a renderer-built PDF, and rejecting a PDF with no placeholder. The renderer's tests are in `test/`.
 
 ## Behaviour notes
 
@@ -79,4 +100,6 @@ The originals are never modified. If the renderer starts importing another libra
 - Completing Save As through the native dialog (the dialog opens; the write path behind it is tested).
 - `theme-updated` when the OS theme changes while the preference is "system".
 - Signatures, drag-reorder, find, highlight and redaction clicked through in the Tauri window.
+- Cryptographic signing over real IPC, and how Adobe Reader or `pdfsig` display the result (the CMS was verified with OpenSSL only).
+- The native unsaved-changes and confirm dialogs on every path (open another file, close file, remove an identity).
 - Large PDFs.

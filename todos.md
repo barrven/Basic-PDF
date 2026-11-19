@@ -1,11 +1,13 @@
 # Todos
 
-- [ ] add markdown features: text entry, line drawing
+Nothing open. Add new items below.
+
+- [x] add markdown features: text entry, line drawing
 - [x] add text highlighting
 - [x] add redaction
-- [ ] add gear icon in top right for application settings
-- [ ] add js form filling features
-- [ ] add cryptographic (digital) signatures — see `features/feature-digital-signature-guide.md`
+
+- [x] add js form filling features — see `features/feature-forms-plan.md`
+- [x] add cryptographic (digital) signatures — see `features/feature-digital-signature-guide.md`
 
 
 # Completed

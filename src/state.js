@@ -70,6 +70,10 @@ export const appState = {
   pages: [],
   signatures: [],
   annotations: [],
+  // Fillable form widgets: `${sourceId}:${originalIndex}` -> true (per source page).
+  formFields: {},
+  // User edits to form fields: `${sourceId}:${fieldName}` -> value.
+  fieldValues: {},
   selectedPages: new Set(),
   focusedPage: 0,
   zoom: null,
@@ -108,6 +112,7 @@ function snapshot() {
     pages: appState.pages,
     signatures: appState.signatures,
     annotations: appState.annotations,
+    fieldValues: appState.fieldValues,
   })
 }
 
@@ -128,6 +133,8 @@ export function dispatch(action) {
       appState.pages = action.pages
       appState.signatures = []
       appState.annotations = []
+      appState.formFields = action.formFields || {}
+      appState.fieldValues = {}
       appState.selectedPages = action.pages.length > 0 ? new Set([0]) : new Set()
       appState.focusedPage = 0
       appState.dirty = false
@@ -146,6 +153,8 @@ export function dispatch(action) {
       appState.pages = []
       appState.signatures = []
       appState.annotations = []
+      appState.formFields = {}
+      appState.fieldValues = {}
       appState.selectedPages = new Set()
       appState.focusedPage = 0
       appState.dirty = false
@@ -188,6 +197,9 @@ export function dispatch(action) {
           ...appState.sources,
           [action.sourceId]: { bytes: action.sourceBytes },
         }
+      }
+      if (action.formFields) {
+        appState.formFields = { ...appState.formFields, ...action.formFields }
       }
       const oldPages = appState.pages
       appState.signatures = remapPageIndexed(oldPages, action.pages, appState.signatures)
@@ -319,6 +331,12 @@ export function dispatch(action) {
       if (action.id) appState.selectedSig = null
       break
     }
+    case 'SET_FIELD_VALUE': {
+      if (action.history) pushHistory()
+      appState.fieldValues = { ...appState.fieldValues, [action.key]: action.value }
+      appState.dirty = true
+      break
+    }
     case 'SET_FILE_PATH': {
       appState.filePath = action.path
       break
@@ -330,6 +348,7 @@ export function dispatch(action) {
       appState.pages = prev.pages
       appState.signatures = prev.signatures
       appState.annotations = prev.annotations || []
+      appState.fieldValues = prev.fieldValues || {}
       // Clear selections that may be invalid.
       appState.selectedPages = new Set()
       if (appState.focusedPage >= appState.pages.length) {
@@ -347,6 +366,7 @@ export function dispatch(action) {
       appState.pages = next.pages
       appState.signatures = next.signatures
       appState.annotations = next.annotations || []
+      appState.fieldValues = next.fieldValues || {}
       appState.selectedPages = new Set()
       if (appState.focusedPage >= appState.pages.length) {
         appState.focusedPage = Math.max(0, appState.pages.length - 1)

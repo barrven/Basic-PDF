@@ -4,6 +4,8 @@
 //!
 //! `bridge.js` maps `window.nativeAPI` onto the commands defined here.
 
+mod signing;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -289,6 +291,54 @@ fn get_app_info(app: AppHandle) -> HashMap<&'static str, String> {
     ])
 }
 
+/// Native Save / Don't save / Cancel prompt. The renderer cannot use
+/// window.confirm: the dialog plugin replaces it with an async version that
+/// returns a (always truthy) Promise and needs a capability this app
+/// deliberately does not grant. Resolves to "save", "discard" or "cancel".
+#[tauri::command(async)]
+fn prompt_unsaved(app: AppHandle, window: WebviewWindow, message: String) -> String {
+    use tauri_plugin_dialog::MessageDialogResult;
+    let result = app
+        .dialog()
+        .message(message)
+        .title("Unsaved changes")
+        .kind(MessageDialogKind::Warning)
+        .parent(&window)
+        .buttons(MessageDialogButtons::YesNoCancelCustom(
+            "Save".into(),
+            "Don't save".into(),
+            "Cancel".into(),
+        ))
+        .blocking_show_with_result();
+    match result {
+        MessageDialogResult::Custom(label) if label == "Save" => "save",
+        MessageDialogResult::Custom(label) if label == "Don't save" => "discard",
+        MessageDialogResult::Yes => "save",
+        MessageDialogResult::No => "discard",
+        _ => "cancel",
+    }
+    .to_string()
+}
+
+/// Native OK / Cancel prompt for destructive actions (see prompt_unsaved for why
+/// the renderer cannot use window.confirm).
+#[tauri::command(async)]
+fn confirm_action(
+    app: AppHandle,
+    window: WebviewWindow,
+    message: String,
+    ok_label: String,
+    title: Option<String>,
+) -> bool {
+    app.dialog()
+        .message(message)
+        .title(title.unwrap_or_else(|| "Confirm".to_string()))
+        .kind(MessageDialogKind::Warning)
+        .parent(&window)
+        .buttons(MessageDialogButtons::OkCancelCustom(ok_label, "Cancel".into()))
+        .blocking_show()
+}
+
 /// Opens the file's parent folder in Explorer with the file selected.
 #[tauri::command]
 fn reveal_in_folder(path: String) -> CmdResult<()> {
@@ -309,6 +359,29 @@ fn reveal_in_folder(path: String) -> CmdResult<()> {
     return Err("Not supported on this platform.".to_string());
     #[cfg(windows)]
     Ok(())
+}
+
+/// Opens a link from a PDF in the default browser / mail client. Only web and
+/// mailto links are allowed; anything else (file:, javascript:, app protocols)
+/// is refused. No shell is involved: the URL is a single argv entry.
+#[tauri::command]
+fn open_url(url: String) -> CmdResult<()> {
+    let lower = url.to_ascii_lowercase();
+    let allowed = lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:");
+    if !allowed || url.len() > 2048 || url.chars().any(|c| c.is_control() || c == '"') {
+        return Err("That kind of link can't be opened.".to_string());
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("rundll32")
+            .arg("url.dll,FileProtocolHandler")
+            .arg(&url)
+            .spawn()
+            .map_err(err)?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    Err("Not supported on this platform.".to_string())
 }
 
 /// Shows a native context menu at the cursor; resolves to the chosen label,
@@ -465,6 +538,14 @@ pub fn run() {
             set_dirty,
             get_app_info,
             reveal_in_folder,
+            open_url,
+            prompt_unsaved,
+            confirm_action,
+            signing::list_identities,
+            signing::remove_identity,
+            signing::generate_self_signed_identity,
+            signing::import_identity,
+            signing::sign_pdf,
             get_theme,
             set_theme,
             window_minimize,

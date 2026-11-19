@@ -20,7 +20,7 @@ function hexToRgb(hex) {
 
 // Visual top-left point (page already rotated) → pdf-lib unrotated media-box
 // point. Matches visualRectToUnrotated() in pdf-engine.js.
-function pointToUnrotated(pdfPage, vx, vy) {
+export function pointToUnrotated(pdfPage, vx, vy) {
   const rotation = normalizeRotation(pdfPage.getRotation().angle)
   const { width: W, height: H } = pdfPage.getSize()
   if (rotation === 90) return { x: vy, y: vx }

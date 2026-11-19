@@ -12,6 +12,8 @@ import { initAbout } from './about.js'
 import { initMenubar, updateMenubar } from './menubar.js'
 import { initMarkup } from './markup.js'
 import { initOutline } from './outline.js'
+import { initForms } from './forms.js'
+import { initIdentities } from './identities.js'
 
 // ─────────── Toast ───────────
 
@@ -27,6 +29,20 @@ export function showToast(message, ms = 2000) {
     t.hidden = true
     toastTimeout = null
   }, ms)
+}
+
+// Persistent, dismissible banner under the toolbar (unlike a toast it stays).
+export function showNotice(message) {
+  const bar = document.getElementById('notice-bar')
+  const text = document.getElementById('notice-text')
+  if (!bar || !text) return
+  text.textContent = message
+  bar.hidden = false
+}
+
+export function hideNotice() {
+  const bar = document.getElementById('notice-bar')
+  if (bar) bar.hidden = true
 }
 
 export function updateLoadingOverlay() {
@@ -185,6 +201,9 @@ function init() {
   initOutline()
   initPreview()
   initMarkup()
+  document.getElementById('notice-close')?.addEventListener('click', hideNotice)
+  initForms()
+  initIdentities()
   initSignature()
   initAnnotate()
   initSearch()

@@ -12,7 +12,14 @@ npm run audit      # npm audit --audit-level=high
 
 Building needs Rust (stable, `x86_64-pc-windows-msvc`) and the Visual Studio C++ Build Tools with a Windows SDK. The Tauri CLI is a dev dependency. See `src-tauri/README.md`.
 
-There is no test suite and no linter configured. `.github/workflows/security.yml` runs `npm audit --audit-level=high` on push, pull request, and weekly (Monday 08:00 UTC).
+There is no linter configured. Tests:
+
+```bash
+npm test             # renderer regression suite in test/ (node:test, Node 22+)
+npm run test:rust    # signing code: cargo test --lib in src-tauri
+```
+
+`.github/workflows/test.yml` runs both on push and pull request; `.github/workflows/security.yml` runs `npm audit --audit-level=high` on push, pull request, and weekly (Monday 08:00 UTC). See the Tests section below and `test/README.md`.
 
 ### App name and version
 
@@ -28,13 +35,13 @@ This is a Tauri desktop app (Rust shell, system WebView2) with a vanilla-JS rend
 
 ### Shell boundary
 
-**Shell** (`src-tauri/src/lib.rs`) owns all native OS access: file open/save dialogs, filesystem reads/writes, right-click context menus, persistent settings, OS-level "open this PDF", display theme, About-dialog app info, the frameless window's minimize / maximize / close / drag commands, and the unsaved-changes prompt when closing the window. It exposes Tauri commands (`pick_open_file`, `pick_save_path`, `read_file_bytes`, `save_file`, `show_context_menu`, `store_get`, `store_set`, `set_dirty`, `get_theme`, `set_theme`, `get_app_info`, `take_pending_open_path`, and five `window_*` commands) and emits a `theme-updated` event to the renderer. PDF bytes cross the boundary as raw binary, not JSON: `read_file_bytes` returns a raw response, and `save_file` takes a raw body with the destination path in the `x-path` header. Theme preference is `'system'` (default, follows the OS), `'light'`, or `'dark'`. Settings are a JSON file, `basic-pdf.json`, in the app config folder (`%APPDATA%/com.barrven.basic-pdf`). Open / Save As dialogs use `lastDir` from that file (the folder of the last file the app opened or saved); if that folder is gone, the dialog uses the OS default.
+**Shell** (`src-tauri/src/lib.rs`) owns all native OS access: file open/save dialogs, filesystem reads/writes, right-click context menus, persistent settings, OS-level "open this PDF", display theme, About-dialog app info, the frameless window's minimize / maximize / close / drag commands, and the unsaved-changes prompt when closing the window. It exposes Tauri commands (`pick_open_file`, `pick_save_path`, `read_file_bytes`, `save_file`, `show_context_menu`, `store_get`, `store_set`, `set_dirty`, `get_theme`, `set_theme`, `get_app_info`, `take_pending_open_path`, `reveal_in_folder`, `open_url`, `prompt_unsaved`, `confirm_action`, the signing commands `list_identities` / `import_identity` / `generate_self_signed_identity` / `remove_identity` / `sign_pdf` (in `src-tauri/src/signing.rs`), and five `window_*` commands) and emits a `theme-updated` event to the renderer. PDF bytes cross the boundary as raw binary, not JSON: `read_file_bytes` returns a raw response, and `save_file` takes a raw body with the destination path in the `x-path` header. Theme preference is `'system'` (default, follows the OS), `'light'`, or `'dark'`. Settings are a JSON file, `basic-pdf.json`, in the app config folder (`%APPDATA%/com.barrven.basic-pdf`). Open / Save As dialogs use `lastDir` from that file (the folder of the last file the app opened or saved); if that folder is gone, the dialog uses the OS default.
 
 Windows Default Apps launches a new process with the PDF as an argument. The shell keeps that path until the renderer registers `onOpenPath`, which pulls it with `take_pending_open_path`. There is no single-instance lock — each launch gets its own window.
 
 Hardening: the renderer has no Node or filesystem access, only the commands above; the capability file (`src-tauri/capabilities/default.json`) grants only `core:event:default`; `on_navigation` keeps the window on the app's own origin (`tauri.localhost`, plus the dev server's address under `tauri dev`). `index.html` ships a strict CSP (`default-src 'none'`, `script-src 'self' 'wasm-unsafe-eval'` for pdf.js WASM, `worker-src 'self' blob:` for the pdf.js worker). The only network access it allows is Google Fonts (`fonts.googleapis.com` / `fonts.gstatic.com`), which `index.html` loads for DM Sans and DM Mono; without a connection the UI falls back to system fonts.
 
-**Bridge** (`src-tauri/src/bridge.js`) is injected as an initialization script before any page script. It defines `window.nativeAPI` (`openFile`, `openFileBytes`, `saveFile`, `saveFileAs`, `showContextMenu`, `getStoreValue`, `setStoreValue`, `setDirty`, `getAppInfo`, `getTheme`, `setTheme`, `onThemeUpdated`, `onOpenPath`) on top of Tauri's `invoke`, which is the renderer's only route to the OS. It also builds the caption buttons inside `#window-controls-spacer` and handles title-bar drag and double-click-to-maximize, because the window is frameless.
+**Bridge** (`src-tauri/src/bridge.js`) is injected as an initialization script before any page script. It defines `window.nativeAPI` (`openFile`, `openFileBytes`, `saveFile`, `saveFileAs`, `showContextMenu`, `getStoreValue`, `setStoreValue`, `setDirty`, `getAppInfo`, `getTheme`, `setTheme`, `onThemeUpdated`, `onOpenPath`, `revealInFolder`, `openExternal`, `promptUnsaved`, `confirm`, `listIdentities`, `importIdentity`, `generateSelfSignedIdentity`, `removeIdentity`, `signPdf`) on top of Tauri's `invoke`, which is the renderer's only route to the OS. It also builds the caption buttons inside `#window-controls-spacer` and handles title-bar drag and double-click-to-maximize, because the window is frameless.
 
 **Frontend assembly** (`src-tauri/scripts/assemble-frontend.mjs`) runs before `tauri dev` and `tauri build`. It copies `index.html`, `icon.png`, `src/`, and only the needed pdf.js / pdf-lib files into `src-tauri/frontend-dist/` (git-ignored), rewrites `../node_modules/` to `../vendor/` in the copied JS, and widens the copied CSP's `connect-src` for Tauri IPC. The sources are never modified. `tauri dev` serves that folder from a local dev server (normally `http://127.0.0.1:1430`), and a built app serves it from `tauri.localhost`. Edits to `src/` or `index.html` only reach the app after `npm start` is re-run; edits under `src-tauri/` rebuild and relaunch automatically while `npm start` is running. If the renderer imports a new library file, add it to `COPIES` in that script.
 
@@ -48,7 +55,7 @@ Hardening: the renderer has no Node or filesystem access, only the commands abov
 - `signatures` / `selectedSig` changes only refresh stamp overlay DOM.
 - `annotations` / `selectedAnnotation` changes only refresh highlight/redact overlay DOM.
 
-**State** (`src/state.js`) is a single `appState` object mutated only through `dispatch(action)`. Subscribers are notified after every dispatch. Undo/redo snapshots only `pages`, `signatures`, and `annotations` (not zoom, selection, loading, etc.), capped at 50 entries. `loading` is set while a PDF is opened or inserted; a workspace overlay spinner stays up until the preview stack has been laid out. The sidebar width is the one piece of UI state kept in `localStorage` (`sidebarWidth`) rather than in the shell's settings file.
+**State** (`src/state.js`) is a single `appState` object mutated only through `dispatch(action)`. Subscribers are notified after every dispatch. Undo/redo snapshots only `pages`, `signatures`, `annotations`, and `fieldValues` (not zoom, selection, loading, etc.), capped at 50 entries. `loading` is set while a PDF is opened or inserted; a workspace overlay spinner stays up until the preview stack has been laid out. The sidebar width is the one piece of UI state kept in `localStorage` (`sidebarWidth`) rather than in the shell's settings file.
 
 **Two-library PDF model**: The app uses two separate PDF libraries with distinct roles:
 - **pdf.js** (`src/renderer.js`) — renders pages to `<canvas>` for display, extracts `getTextContent()` (cached by `sourceId` + `originalIndex`), and supplies the viewport used by the text layer. Each loaded file is keyed by a `sourceId` in a module-level `Map`. Documents are opened with `cMapUrl` and `standardFontDataUrl` (`useWorkerFetch: false`, so they are fetched on the main thread).
@@ -58,13 +65,13 @@ Hardening: the renderer has no Node or filesystem access, only the commands abov
 
 The toolbar "Add page" button is commented out; blank pages are still available from the thumbnail context menu (`Insert blank page after`).
 
-**Signatures** are stored as `{ id, pageIndex, x, y, width, height, opacity, dataUrl }` in `appState.signatures`. Coordinates are in pdf.js visual top-left space for the page at its current rotation. `buildOutputDoc()` converts those into pdf-lib's unrotated media-box space (and rotates the image) when embedding. `SET_PAGE_ORDER` / `INSERT_PAGES` remap `pageIndex` by page `id` so stamps follow the page they were placed on. Placed stamps can be dragged and resized with eight handles (aspect ratio locked, min 20pt). `opacity` is always 1: preview and save honor the field, but there is no control that changes it. The saved library (persisted in the shell's settings file) is capped at 20 entries in `src/store.js`; entries can be removed from the library popover. WebP uploads are rasterized to PNG before save.
+**Signatures** are stored as `{ id, pageIndex, x, y, width, height, opacity, dataUrl }` in `appState.signatures`, plus `digital: true, identityId, signerLabel` when the stamp should also carry a cryptographic signature (at most one per document; `buildOutputBytes()` in `src/pdf-engine.js` reserves the placeholder and calls `signPdf` last). Coordinates are in pdf.js visual top-left space for the page at its current rotation. `buildOutputDoc()` converts those into pdf-lib's unrotated media-box space (and rotates the image) when embedding. `SET_PAGE_ORDER` / `INSERT_PAGES` remap `pageIndex` by page `id` so stamps follow the page they were placed on. Placed stamps can be dragged and resized with eight handles (aspect ratio locked, min 20pt). `opacity` is always 1: preview and save honor the field, but there is no control that changes it. The saved library (persisted in the shell's settings file) is capped at 20 entries in `src/store.js`; entries can be removed from the library popover. WebP uploads are rasterized to PNG before save.
 
 **Annotations** (`appState.annotations`) are `{ id, type, pageIndex, rects, color }` with `type` `'highlight'` or `'redact'`. Drawn markup (`src/markup.js`) uses the same array with `type` `'text' | 'rect' | 'ellipse' | 'line' | 'draw'` and its own geometry fields (`x/y/width/height`, `x1..y2`, `points`, `text`, `color`, `strokeWidth`) instead of `rects`; never assume `rects` exists. Rects use the same visual top-left space as stamps. Select text to show `#annotate-popover` (`src/annotate.js`); `Ctrl/Cmd+H` highlights. Highlights sit under the text layer; redactions sit above it and block select/copy. On save, highlights are multiply-blend rectangles; a page with any redaction is rasterized (isolated pdf.js document at 2×, long edge capped at 3000px) so the covered glyphs are not in the output. `SET_PAGE_ORDER` / `INSERT_PAGES` remap annotation `pageIndex` by page `id`.
 
 ### Preview
 
-The preview pane (`#preview-pane`) is a continuous vertical stack of `.preview-page` nodes (canvas + highlight overlay + pdf.js `TextLayer` + redaction overlay + signature overlay), not a single-page canvas. Stack order is canvas, then `.annot-highlight-layer`, then `.textLayer`, then `.annot-redact-layer`, then `.signature-overlay-layer`. Pages are measured, laid out, then rasterized lazily with `IntersectionObserver` (`src/preview.js`). A page canvas gets its backing store only when it is rasterized, and pages far from the viewport are freed again (canvas and text layer; at most 12 rendered pages are kept outside the observer margin) and re-render when scrolled back to. Fit-to-width (`zoom === null`) scales each page to the pane width; numeric zoom uses a shared `%` scale from `src/zoom.js` (steps 50–200). Scrolling updates `focusedPage` (and single-page selection) from whichever page sits near the top of the viewport. Thumbnail clicks and arrow keys scroll that page into view.
+The preview pane (`#preview-pane`) is a continuous vertical stack of `.preview-page` nodes (canvas + highlight overlay + pdf.js `TextLayer` + redaction overlay + signature overlay), not a single-page canvas. Stack order is canvas, then `.annot-highlight-layer`, then `.textLayer`, then `.annot-redact-layer`, then `.annot-form-layer` (fillable form widgets), then `.markup-layer` (drawn markup SVG), then `.signature-overlay-layer`. Pages are measured, laid out, then rasterized lazily with `IntersectionObserver` (`src/preview.js`). A page canvas gets its backing store only when it is rasterized, and pages far from the viewport are freed again (canvas and text layer; at most 12 rendered pages are kept outside the observer margin) and re-render when scrolled back to. Fit-to-width (`zoom === null`) scales each page to the pane width; numeric zoom uses a shared `%` scale from `src/zoom.js` (steps 50–200). Scrolling updates `focusedPage` (and single-page selection) from whichever page sits near the top of the viewport. Thumbnail clicks and arrow keys scroll that page into view.
 
 The text layer is built only for visible (or near-viewport) non-blank pages after the canvas paints, using the cached `getTextContent()` payload. It enables drag-select, copy, and find highlights. Pointer events on `.textLayer` are disabled during signature placement. Click-after-drag does not deselect a stamp. `Ctrl/Cmd+A` selects all text in the active layer when a text selection is already there; otherwise it selects all pages. Cross-page selection is not supported.
 
@@ -78,7 +85,9 @@ The text layer is built only for visible (or near-viewport) non-blank pages afte
 
 ### Dirty state
 
-`dirty` is set on page/signature/annotation edits. Opening another file or closing the current file prompts in the renderer (`window.confirm`). Closing the window prompts in the shell: the renderer calls `setDirty` on every dirty change, and the `CloseRequested` window event shows a native dialog when the dirty flag is set.
+The renderer must not use `window.confirm`: `tauri-plugin-dialog` replaces it with an async version that returns a Promise (always truthy) and needs a capability this app does not grant. Use `nativeAPI.promptUnsaved` (Save / Don't save / Cancel) or `nativeAPI.confirm` instead.
+
+`dirty` is set on page/signature/annotation/form edits. Opening another file or closing the current file prompts through `resolveUnsavedChanges()` in `src/pdf-engine.js` (`nativeAPI.promptUnsaved`: save, discard or cancel; a cancelled or failed save keeps the file open). Closing the window prompts in the shell: the renderer calls `setDirty` on every dirty change, and the `CloseRequested` window event shows a native dialog when the dirty flag is set.
 
 ### Module responsibilities
 
@@ -92,6 +101,11 @@ The text layer is built only for visible (or near-viewport) non-blank pages afte
 | `src/toolbar.js` | Toolbar (Markup toggle, page counter, zoom), expandable markup ribbon (placeholder tools + Signature), insert/delete/rotate helpers |
 | `src/markup.js` | Markup tools from the ribbon: text, rectangle, ellipse, line, freehand. Pointer drawing, text editor, SVG `.markup-layer` per page, click-to-select |
 | `src/markup-save.js` | Draws markup annotations into the saved PDF (pdf-lib, rotation-aware) and onto redaction-flattened pages (canvas) |
+| `src/forms.js` | Fillable AcroForm widgets (text, checkbox, radio, dropdown, list): detection, DOM controls, edits into `appState.fieldValues`, values for redaction-flattened pages |
+| `src/form-actions.js` | Push-button actions (GoTo, Named, URI after a confirm, ResetForm) and `AFSimple_Calculate` recalculation. No PDF JavaScript engine: scripts are never run; Hide/Show/Submit buttons are unsupported and show a toast |
+| `src/forms-save.js` | pdf-lib side of forms: write values into the source doc, strip widget `/P`, rebuild `/AcroForm` |
+| `src/pdf-signature.js` | `/Sig` placeholder + signature field for the shell to fill; detects already-signed PDFs |
+| `src/identities.js` | Signing identities UI (list, create self-signed, import PFX) and the per-stamp "also sign cryptographically" choice |
 | `src/zoom.js` | Shared zoom step list (50–200%) and `snapZoom()` used by toolbar and wheel zoom |
 | `src/outline.js` | Sidebar Pages / Outline switch. Outline uses the PDF's bookmarks, else headings detected from text size; click jumps to the page, current section follows scrolling |
 | `src/sidebar.js` | Thumbnail list (rendered lazily through the render queue), drag-to-reorder, click selection, context menu, resizable width |
@@ -104,6 +118,7 @@ The text layer is built only for visible (or near-viewport) non-blank pages afte
 | `src/about.js` | About modal, opened from Help → About (`nativeAPI.getAppInfo()`) |
 | `src/shortcuts.js` | Global keyboard shortcuts |
 | `src-tauri/src/lib.rs` | Rust shell: Tauri commands, settings file, context menu, theme, frameless-window commands, close prompt |
+| `src-tauri/src/signing.rs` | Identities (DPAPI-protected), CMS/CAdES signing, `/ByteRange` + `/Contents` patching, unit tests (`cargo test --lib`) |
 | `src-tauri/src/bridge.js` | `window.nativeAPI` on top of Tauri `invoke`; caption buttons and title-bar drag |
 | `src-tauri/scripts/assemble-frontend.mjs` | Builds `src-tauri/frontend-dist/` before `tauri dev` / `tauri build` |
 
@@ -121,13 +136,24 @@ As-built notes (these features are implemented):
 - `features/feature-select-text.md` — pdf.js text layer, select-and-copy, interaction with stamps and `Ctrl+A`
 - `features/feature-search-text.md` — Ctrl/Cmd+F find bar on that same text layer and extract cache
 - `features/feature-annotate.md` — saved highlight and redaction on that same text layer
+- `features/feature-forms-plan.md` — AcroForm field filling (implemented; "As built" section first, original plan after)
+- `features/feature-digital-signature-guide.md` — cryptographic (CAdES) signatures signed in the Rust shell (implemented; "As built" section first, original guide after)
 
-Design notes (not implemented):
+`todos.md` tracks the backlog; everything listed there is currently done.
 
-- `features/feature-forms-plan.md` — implementation plan for AcroForm field filling (the `todos.md` "add js form filling features" item)
-- `features/feature-digital-signature-guide.md` — design for cryptographic (PAdES) signatures, signing in the Rust shell; not prototyped
+### Tests
 
-Open product ideas (not designed, not implemented) live in `todos.md`: annotation-style drawing/text entry, a settings gear.
+`test/` holds the renderer regression suite (`npm test`). It uses Node's built-in runner and stubs the browser-only modules (`main.js`, `renderer.js`, `preview.js`, `signature.js`, pdf.js) via `mock.module`, so state, the save pipeline and the pure helpers run unmodified. Add a test whenever behaviour changes; when fixing a bug, add the failing test first.
+
+| File | Covers |
+|------|--------|
+| `test/state.test.mjs` | Every reducer action, page-identity remapping, undo/redo, dirty flag |
+| `test/units.test.mjs` | Zoom, find hits, rect merging/overlap, find-vs-redaction, markup coordinate mapping, signature library |
+| `test/engine.test.mjs` | `saveDocument` / `closeFile` / `loadFromBytes` end to end: page assembly, rotation, highlights, redaction fallback, markup, stamps, forms, signature placeholder, unsaved prompts |
+| `test/contracts.test.mjs` | JS/Rust/HTML/build-script consistency: version in four places, `nativeAPI` vs bridge vs Rust commands, signing placeholder, `COPIES`, element ids, CSP |
+| `test/helpers/` | `mocks.mjs` (module stubs, `fake.pdfjs`, `installNativeAPI`), `pdf.mjs` (PDF fixtures and inspection) |
+
+Not covered (check by hand in `npm start`): preview rendering and overlays, drag/resize, redaction flattening to an image, native dialogs, real signing over IPC. A new source module that the tested code imports and that touches `document` at import time needs a stub in `installMocks()`; a new native command must be added to `bridge.js` and `lib.rs` together (the contract test fails otherwise).
 
 ### Build output
 
