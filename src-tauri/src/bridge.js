@@ -52,6 +52,7 @@
     confirm: (message, okLabel, title) => invoke('confirm_action', { message, okLabel: okLabel || 'OK', title }),
     promptUnsaved: (message) => invoke('prompt_unsaved', { message }),
     revealInFolder: (path) => invoke('reveal_in_folder', { path }),
+    openExternal: (url) => invoke('open_url', { url }),
     getTheme: () => invoke('get_theme'),
     setTheme: (preference) => invoke('set_theme', { preference }),
     onThemeUpdated: (callback) => {

@@ -432,11 +432,12 @@ describe('opening', () => {
     assert.equal(appState.dirty, false)
   })
 
-  test('detects which pages carry fillable fields', async () => {
-    const bytes = await makePdf({ pages: 2 })
-    fake.pdfjs = pdfjsFor([0, 0], { f: [{ type: 'text', page: 1 }, { type: 'button', page: 0 }, { type: 'text', page: 0, hidden: true }] })
+  test('detects which pages carry fillable fields or push buttons', async () => {
+    const bytes = await makePdf({ pages: 3 })
+    // Page 0 has only a hidden field (no form layer); page 1 a text field; page 2 a push button.
+    fake.pdfjs = pdfjsFor([0, 0, 0], { f: [{ type: 'text', page: 1 }, { type: 'button', page: 2 }, { type: 'text', page: 0, hidden: true }] })
     await engine.loadFromBytes('C:\\a.pdf', bytes)
-    assert.deepEqual(appState.formFields, { 'primary:1': true })
+    assert.deepEqual(appState.formFields, { 'primary:1': true, 'primary:2': true })
   })
 
   test('an XFA form gets a warning and no fields', async () => {

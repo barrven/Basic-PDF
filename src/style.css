@@ -1499,6 +1499,44 @@ body.markup-tool-active .annot-redact-rect {
   pointer-events: auto;
 }
 
+.form-button {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.form-button:hover {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.form-button:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+body.markup-tool-active .annot-form-layer .form-button {
+  pointer-events: none;
+}
+
+.form-widget[data-vis="off"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.form-widget[data-vis="cover"] {
+  background: #fff;
+  border-color: #fff;
+  pointer-events: none;
+}
+
+.form-widget[data-vis="cover"] > * {
+  visibility: hidden;
+}
+
 .form-widget.form-widget-redacted {
   visibility: hidden;
   pointer-events: none;

@@ -361,6 +361,29 @@ fn reveal_in_folder(path: String) -> CmdResult<()> {
     Ok(())
 }
 
+/// Opens a link from a PDF in the default browser / mail client. Only web and
+/// mailto links are allowed; anything else (file:, javascript:, app protocols)
+/// is refused. No shell is involved: the URL is a single argv entry.
+#[tauri::command]
+fn open_url(url: String) -> CmdResult<()> {
+    let lower = url.to_ascii_lowercase();
+    let allowed = lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:");
+    if !allowed || url.len() > 2048 || url.chars().any(|c| c.is_control() || c == '"') {
+        return Err("That kind of link can't be opened.".to_string());
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("rundll32")
+            .arg("url.dll,FileProtocolHandler")
+            .arg(&url)
+            .spawn()
+            .map_err(err)?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    Err("Not supported on this platform.".to_string())
+}
+
 /// Shows a native context menu at the cursor; resolves to the chosen label,
 /// or `None` when dismissed.
 #[tauri::command(async)]
@@ -515,6 +538,7 @@ pub fn run() {
             set_dirty,
             get_app_info,
             reveal_in_folder,
+            open_url,
             prompt_unsaved,
             confirm_action,
             signing::list_identities,
