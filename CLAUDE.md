@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Branch workflow
+
+All new work (features, fixes, docs, tests) goes on the `dev` branch. Never commit to `master` directly, and never create other long-lived branches. Merge `dev` into `master` only when the user explicitly says to. If `dev` does not exist, create it from `master`; if you are on `master`, switch to `dev` before editing.
+
 ## Commands
 
 ```bash
