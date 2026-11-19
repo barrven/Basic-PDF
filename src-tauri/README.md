@@ -81,8 +81,10 @@ The originals are never modified. If the renderer starts importing another libra
 ## Tests
 
 ```bash
-cargo test --lib --manifest-path src-tauri/Cargo.toml     # from the repo root: npm run test:rust
+npm run test:rust    # assembles frontend-dist, then cargo test --lib
 ```
+
+`tauri::generate_context!()` in `src/lib.rs` refuses to compile when `frontend-dist/` is missing. That folder is git-ignored build output, so the npm script builds it before Cargo.
 
 Covers P-256 and RSA signing (verified structurally), PFX import, the DPAPI round-trip, signing a renderer-built PDF, and rejecting a PDF with no placeholder. The renderer's tests are in `test/`.
 

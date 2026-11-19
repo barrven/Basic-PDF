@@ -7,7 +7,7 @@ npm test             # renderer suite (Node's built-in test runner, no extra dep
 npm run test:rust    # signing code in src-tauri (cargo test --lib)
 ```
 
-Node 22 or newer. `npm test` passes `--experimental-test-module-mocks` (used to stub browser-only modules) and silences two warnings that flag, respectively, the module-type notice for `package.json` and the experimental mocking API. CI (`.github/workflows/test.yml`) runs both suites on every push and pull request.
+Node 26 or newer. Node 22's `mock.module` does not satisfy the named imports these tests stub. `npm test` passes `--experimental-test-module-mocks` (used to stub browser-only modules) and silences two warnings that flag, respectively, the module-type notice for `package.json` and the experimental mocking API. CI (`.github/workflows/test.yml`) runs both suites on every push and pull request. `npm run test:rust` assembles `src-tauri/frontend-dist` first, because `tauri::generate_context!()` will not compile without it.
 
 ## What is covered
 

@@ -11,7 +11,7 @@
     "build": "tauri build",
     "audit": "npm audit --audit-level=high",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning --experimental-test-module-mocks --test test/*.test.mjs",
-    "test:rust": "cargo test --lib --manifest-path src-tauri/Cargo.toml"
+    "test:rust": "node src-tauri/scripts/assemble-frontend.mjs && cargo test --lib --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "pdf-lib": "^1.17.1",
