@@ -19,7 +19,7 @@ Building needs Rust (stable, `x86_64-pc-windows-msvc`) and the Visual Studio C++
 There is no linter configured. Tests:
 
 ```bash
-npm test             # renderer regression suite in test/ (node:test, Node 22+)
+npm test             # renderer regression suite in test/ (node:test, Node 26+)
 npm run test:rust    # signing code: cargo test --lib in src-tauri
 ```
 

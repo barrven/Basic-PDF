@@ -11,7 +11,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # Node 22's experimental mock.module does not satisfy the named
+          # imports these tests stub (getPdfDocFor, Util). Node 26 does.
+          node-version: '26'
           cache: npm
       - run: npm ci
       - run: npm test
@@ -20,8 +22,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+      - run: npm ci
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: cargo test --lib --manifest-path src-tauri/Cargo.toml
+      # generate_context!() refuses to compile unless src-tauri/frontend-dist exists.
+      - run: npm run test:rust

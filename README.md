@@ -51,7 +51,7 @@ The build target and the `.pdf` file association are configured in `src-tauri/ta
 ## Testing
 
 ```bash
-npm test             # renderer regression suite (Node 22+, no extra dependencies)
+npm test             # renderer regression suite (Node 26+, no extra dependencies)
 npm run test:rust    # signing code in the Rust shell
 ```
 
