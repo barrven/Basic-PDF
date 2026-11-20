@@ -7,6 +7,13 @@ on:
   schedule:
     - cron: '0 8 * * 1'
 
+# rustsec/audit-check publishes its result as a GitHub check. The default
+# token can read the repo but cannot create that check, so the job fails
+# even when cargo audit finds no vulnerabilities.
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   npm:
     runs-on: ubuntu-latest
