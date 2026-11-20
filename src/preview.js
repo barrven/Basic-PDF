@@ -113,7 +113,8 @@ function modalIsOpen() {
   const m = document.getElementById('modal-backdrop')
   const e = document.getElementById('error-modal-backdrop')
   const a = document.getElementById('about-modal-backdrop')
-  return (m && !m.hidden) || (e && !e.hidden) || (a && !a.hidden)
+  const s = document.getElementById('shortcuts-modal-backdrop')
+  return (m && !m.hidden) || (e && !e.hidden) || (a && !a.hidden) || (s && !s.hidden)
 }
 
 function onPreviewWheel(e) {
@@ -944,6 +945,24 @@ export function scrollPreviewToFocused(opts = {}) {
     return
   }
   const top = elRect.top - paneRect.top + pane.scrollTop - 8
+  ignoreScrollSync = true
+  pane.scrollTo({ top: Math.max(0, top), behavior: 'auto' })
+  requestAnimationFrame(() => {
+    ignoreScrollSync = false
+  })
+}
+
+// Scroll so a point `yRatio` (0 = top, 1 = bottom) down page `pageIndex` sits at
+// the top of the preview viewport. Used by the outline to land on a heading.
+export function scrollPreviewToPageOffset(pageIndex, yRatio) {
+  const view = pageViews[pageIndex]
+  const pane = document.getElementById('preview-pane')
+  if (!view || !pane) return
+  const ratio = Math.min(1, Math.max(0, Number.isFinite(yRatio) ? yRatio : 0))
+  const paneRect = pane.getBoundingClientRect()
+  const elRect = view.el.getBoundingClientRect()
+  const pageTop = elRect.top - paneRect.top + pane.scrollTop
+  const top = pageTop + view.el.offsetHeight * ratio - 12 // small margin above the heading
   ignoreScrollSync = true
   pane.scrollTo({ top: Math.max(0, top), behavior: 'auto' })
   requestAnimationFrame(() => {

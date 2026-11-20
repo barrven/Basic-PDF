@@ -1,6 +1,6 @@
 import { appState, dispatch, subscribe } from './state.js'
-import { getPdfDoc, getPageTextContent } from './renderer.js'
-import { scrollPreviewToFocused } from './preview.js'
+import { getPdfDoc, getPage, getPageTextContent } from './renderer.js'
+import { scrollPreviewToFocused, scrollPreviewToPageOffset } from './preview.js'
 
 // Sidebar outline view. Uses the PDF's own bookmarks when it has them and falls
 // back to detecting headings from text size. Nodes point at pages of the
@@ -141,12 +141,26 @@ async function resolveItems(doc, items, depth) {
   const out = []
   for (const item of items) {
     let originalIndex = null
+    let pdfX = null
+    let pdfY = null
     try {
       let dest = item.dest
       if (typeof dest === 'string') dest = await doc.getDestination(dest)
       if (Array.isArray(dest) && dest.length) {
         const ref = dest[0]
         originalIndex = typeof ref === 'object' && ref !== null ? await doc.getPageIndex(ref) : ref
+        // Position on the page: /XYZ left top zoom, /FitH top, /FitBH top, /FitR l b r t.
+        const kind = dest[1]?.name
+        const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+        if (kind === 'XYZ') {
+          pdfX = num(dest[2])
+          pdfY = num(dest[3])
+        } else if (kind === 'FitH' || kind === 'FitBH') {
+          pdfY = num(dest[2])
+        } else if (kind === 'FitR') {
+          pdfX = num(dest[2])
+          pdfY = num(dest[5])
+        }
       }
     } catch {
       originalIndex = null
@@ -154,6 +168,8 @@ async function resolveItems(doc, items, depth) {
     out.push({
       title: String(item.title || '').trim() || '(untitled)',
       originalIndex: Number.isInteger(originalIndex) ? originalIndex : null,
+      pdfX,
+      pdfY,
       children: item.items?.length ? await resolveItems(doc, item.items, depth + 1) : [],
     })
   }
@@ -179,7 +195,7 @@ async function embeddedNodes() {
       const pageIndex = item.originalIndex === null ? undefined : byOriginal.get(item.originalIndex)
       const start = out.length
       if (pageIndex !== undefined) {
-        out.push({ title: item.title, pageIndex, depth, hasChildren: false })
+        out.push({ title: item.title, pageIndex, depth, hasChildren: false, pdfX: item.pdfX, pdfY: item.pdfY })
         walk(item.children, depth + 1)
         if (out.length > start + 1) out[start].hasChildren = true
       } else {
@@ -223,7 +239,7 @@ async function detectedNodes(gen) {
         current.text += text
         current.size = Math.max(current.size, text.trim() ? size : 0)
       } else {
-        current = { y, text, size: text.trim() ? size : 0 }
+        current = { y, x: item.transform[4], text, size: text.trim() ? size : 0 }
         lines.push(current)
       }
     }
@@ -241,26 +257,66 @@ async function detectedNodes(gen) {
   }
   if (!body) return []
 
-  const candidates = []
+  let candidates = []
   pageLines.forEach((lines, pageIndex) => {
+    let prev = null // previous heading line on this page, to join wrapped headings
     for (const line of lines) {
       const text = line.text.replace(/\s+/g, ' ').trim()
-      if (line.size < body * 1.2 || line.size < body + 1) continue
-      if (text.length < 2 || text.length > 100) continue
-      if (/^[\d\s.\-–]+$/.test(text)) continue // page numbers
-      candidates.push({ title: text, pageIndex, size: line.size })
+      const isHeading =
+        line.size >= body * 1.2 &&
+        line.size >= body + 1 &&
+        text.length >= 2 &&
+        !/^[\d\s.\-–]+$/.test(text) // page numbers
+      if (!isHeading) {
+        prev = null
+        continue
+      }
+      // A heading that wraps onto a second line (same size, tight spacing) is one entry.
+      if (prev && prev.size === line.size && prev.y - line.y > 0 && prev.y - line.y < line.size * 1.6) {
+        prev.cand.title += ' ' + text
+        prev.y = line.y
+        continue
+      }
+      const cand = { title: text, pageIndex, size: line.size, pdfX: line.x, pdfY: line.y + line.size }
+      candidates.push(cand)
+      prev = { cand, size: line.size, y: line.y }
     }
   })
+  candidates = candidates.filter((c) => c.title.length <= 100)
+
+  // Running headers / footers repeat on many pages; they are not sections.
+  const pagesByTitle = new Map()
+  for (const c of candidates) {
+    const set = pagesByTitle.get(c.title) || new Set()
+    set.add(c.pageIndex)
+    pagesByTitle.set(c.title, set)
+  }
+  candidates = candidates.filter((c) => pagesByTitle.get(c.title).size < 3)
   if (!candidates.length || candidates.length > MAX_DETECTED) return []
 
-  const sizes = [...new Set(candidates.map((c) => c.size))].sort((a, b) => b - a).slice(0, MAX_DEPTH)
-  return candidates
-    .filter((c) => sizes.includes(c.size))
-    .map((c, i, arr) => {
-      const depth = sizes.indexOf(c.size)
-      const next = arr.find((n, j) => j > i && sizes.includes(n.size))
-      return { title: c.title, pageIndex: c.pageIndex, depth, hasChildren: !!next && sizes.indexOf(next.size) > depth }
-    })
+  // Sizes within 1pt of each other are the same level (rounding and font hinting
+  // make one heading style vary slightly). The three largest levels are kept.
+  const distinct = [...new Set(candidates.map((c) => c.size))].sort((a, b) => b - a)
+  const levels = [] // representative (largest) size per level
+  for (const s of distinct) {
+    if (!levels.length || levels[levels.length - 1] - s >= 1) levels.push(s)
+  }
+  const levelOf = (size) => levels.findIndex((l) => l - size < 1)
+  const keep = levels.slice(0, MAX_DEPTH)
+  const usable = candidates
+    .map((c) => ({ ...c, depth: levelOf(c.size) }))
+    .filter((c) => c.depth >= 0 && c.depth < keep.length)
+  return usable.map((c, i) => {
+    const next = usable[i + 1]
+    return {
+      title: c.title,
+      pageIndex: c.pageIndex,
+      depth: c.depth,
+      hasChildren: !!next && next.depth > c.depth,
+      pdfX: c.pdfX,
+      pdfY: c.pdfY,
+    }
+  })
 }
 
 // ─────────── Rendering ───────────
@@ -294,6 +350,7 @@ function renderOutline() {
     row.className = 'outline-item'
     row.dataset.index = String(i)
     row.dataset.page = String(n.pageIndex)
+    row.title = `${n.title} (page ${n.pageIndex + 1})`
     row.style.paddingLeft = 6 + n.depth * 14 + 'px'
     row.setAttribute('role', 'button')
     row.tabIndex = 0
@@ -353,10 +410,28 @@ function onOutlineClick(e) {
     return
   }
   const page = Number(row.dataset.page)
-  if (page === appState.focusedPage) {
-    scrollPreviewToFocused()
-  } else {
+  const node = nodes[Number(row.dataset.index)]
+  if (page !== appState.focusedPage) {
     dispatch({ type: 'SET_SELECTED_PAGES', pages: new Set([page]) })
     dispatch({ type: 'SET_FOCUSED_PAGE', page })
   }
+  jumpToNode(node, page)
+}
+
+// Scroll so the heading itself (not just its page) is at the top of the viewport.
+async function jumpToNode(node, page) {
+  let ratio = 0
+  const entry = appState.pages[page]
+  if (node && entry && entry.originalIndex >= 0 && node.pdfY != null) {
+    try {
+      const pdfPage = await getPage(entry.sourceId, entry.originalIndex)
+      const viewport = pdfPage.getViewport({ scale: 1, rotation: entry.rotation })
+      const [, vy] = viewport.convertToViewportPoint(node.pdfX ?? 0, node.pdfY ?? 0)
+      if (Number.isFinite(vy) && viewport.height > 0) ratio = vy / viewport.height
+    } catch {
+      ratio = 0
+    }
+  }
+  if (ratio > 0) scrollPreviewToPageOffset(page, ratio)
+  else scrollPreviewToFocused({ force: true })
 }

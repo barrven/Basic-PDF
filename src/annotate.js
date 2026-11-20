@@ -22,19 +22,8 @@ export function initAnnotate() {
     applyRedactFromSelection()
   })
 
-  document.addEventListener('selectionchange', scheduleAnnotatePopover)
-
-  const pane = document.getElementById('preview-pane')
-  pane?.addEventListener('scroll', () => {
-    if (!isAnnotatePopoverOpen()) return
-    scheduleAnnotatePopover()
-  }, { passive: true })
-
-  window.addEventListener('resize', () => {
-    if (!isAnnotatePopoverOpen()) return
-    scheduleAnnotatePopover()
-  })
-
+  // The popover is no longer shown on text selection (no selectionchange listener);
+  // highlight / redact are reached through Ctrl/Cmd+H and the markup ribbon buttons.
   subscribe(() => {
     if (isPlacing() || !appState.filePath) hideAnnotatePopover()
   })

@@ -908,6 +908,10 @@ button:disabled {
   display: none;
 }
 
+#loading-cancel[hidden] {
+  display: none;
+}
+
 #loading-overlay p {
   margin: 0;
   font-size: 13px;
@@ -938,6 +942,7 @@ button:disabled {
 
 #modal-backdrop,
 #error-modal-backdrop,
+#shortcuts-modal-backdrop,
 #about-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -950,8 +955,53 @@ button:disabled {
 
 #modal-backdrop[hidden],
 #error-modal-backdrop[hidden],
+#shortcuts-modal-backdrop[hidden],
 #about-modal-backdrop[hidden] {
   display: none;
+}
+
+#shortcuts-modal {
+  width: 440px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+#shortcuts-modal .modal-body {
+  padding: 8px 18px 16px;
+  overflow-y: auto;
+}
+
+#shortcuts-list h3 {
+  margin: 12px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.shortcuts-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.shortcuts-row kbd {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+#shortcuts-modal .modal-row {
+  margin-top: 14px;
 }
 
 #signature-modal {
@@ -1795,4 +1845,29 @@ body.markup-tool-active .annot-form-layer .form-widget {
   border: 1px solid var(--border);
   border-radius: 50%;
   pointer-events: none;
+}
+
+/* Highlight / Redact armed: the cursor selects text. */
+body.text-select-armed .preview-page .textLayer {
+  cursor: text;
+}
+
+/* Printing: only the document (#print-root), never the app interface. */
+#print-root { display: none; }
+@media print {
+  @page { margin: 0; }
+  body > *:not(#print-root) { display: none !important; }
+  /* The app shell fixes html/body to the viewport with overflow hidden,
+     which would clip the printout to one page. */
+  html, body { background: #fff !important; height: auto !important; width: auto !important; overflow: visible !important; }
+  #print-root { display: block; }
+  #print-root .print-page {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    object-fit: contain;
+    break-after: page;
+    page-break-after: always;
+  }
+  #print-root .print-page:last-child { break-after: auto; page-break-after: auto; }
 }

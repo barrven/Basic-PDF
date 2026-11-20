@@ -9,6 +9,7 @@ import { initSearch, onSearchDocumentChanged } from './search.js'
 import { initOsFileOpen } from './pdf-engine.js'
 import { initTheme } from './theme.js'
 import { initAbout } from './about.js'
+import { initShortcutsHelp } from './shortcuts-help.js'
 import { initMenubar, updateMenubar } from './menubar.js'
 import { initMarkup } from './markup.js'
 import { initOutline } from './outline.js'
@@ -195,6 +196,7 @@ function syncDirtyToMain() {
 function init() {
   initTheme()
   initAbout()
+  initShortcutsHelp()
   initMenubar()
   initToolbar()
   initSidebar()

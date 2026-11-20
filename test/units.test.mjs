@@ -7,7 +7,7 @@ installMocks()
 const { appState, dispatch } = await import('../src/state.js')
 const { findHitsInItems } = await import('../src/search.js')
 const { rectsOverlap, mergeLineRects, textItemVisualRect, filterHitsCoveredByRedactions } = await import('../src/annotate.js')
-const { fieldKey, pageFormKey, pageHasForm } = await import('../src/forms.js')
+const { fieldKey, pageFormKey, pageHasForm, isActionableLink, findTextUrls } = await import('../src/forms.js')
 const { isMarkup, pointToUnrotated } = await import('../src/markup-save.js')
 const store = await import('../src/store.js')
 
@@ -127,6 +127,23 @@ describe('forms helpers', () => {
     assert.equal(pageHasForm({ sourceId: null, originalIndex: -1 }), false)
     assert.equal(pageHasForm(null), false)
   })
+  test('findTextUrls finds plain-text addresses and trims punctuation', () => {
+    const item = (str) => ({ str, transform: [12, 0, 0, 12, 72, 700], width: 100, height: 12 })
+    const hits = findTextUrls([item('https://music.youtube.com/watch?v=1&list=2'), item('see www.example.com.'), item('no link here')])
+    assert.equal(hits.length, 2)
+    assert.equal(hits[0].url, 'https://music.youtube.com/watch?v=1&list=2')
+    assert.deepEqual([hits[0].rect[0], hits[0].rect[2]], [72, 172])
+    assert.equal(hits[1].url, 'https://www.example.com')
+    assert.ok(hits[1].rect[0] > 72 && hits[1].rect[2] < 172)
+  })
+  test('isActionableLink accepts Link annotations with a target (even on pages with no form)', () => {
+    const rect = [0, 0, 10, 10]
+    assert.equal(isActionableLink({ subtype: 'Link', url: 'https://example.com/', rect }), true)
+    assert.equal(isActionableLink({ subtype: 'Link', dest: 'chapter1', rect }), true)
+    assert.equal(isActionableLink({ subtype: 'Link', rect }), false)
+    assert.equal(isActionableLink({ subtype: 'Widget', url: 'https://example.com/', rect }), false)
+    assert.equal(isActionableLink(null), false)
+  })
 })
 
 describe('markup helpers', () => {
@@ -170,5 +187,29 @@ describe('signature library store', () => {
     assert.equal(lib.length, 20)
     assert.equal(lib[0].id, '5')
     assert.equal(lib.at(-1).id, '24')
+  })
+})
+
+describe('trimTextItem (text kept on a redacted page)', async () => {
+  const { trimTextItem } = await import('../src/pdf-engine.js')
+  const box = (x, y, width, height) => ({ x, y, width, height })
+
+  test('an item no box touches is kept whole', () => {
+    assert.deepEqual(trimTextItem('hello', 10, 50, 10, 22, [box(200, 10, 20, 12)]), [{ str: 'hello', left: 10, width: 50 }])
+  })
+
+  test('an item on another line is kept whole', () => {
+    assert.equal(trimTextItem('hello', 10, 50, 10, 22, [box(10, 100, 50, 12)]).length, 1)
+  })
+
+  test('only the covered characters are dropped', () => {
+    // 10 chars, 10pt each from x=0; the box covers chars 3..5.
+    const out = trimTextItem('0123456789', 0, 100, 0, 12, [box(30, 0, 30, 12)])
+    assert.deepEqual(out.map((p) => p.str), ['012', '6789'])
+    assert.equal(out[1].left, 60)
+  })
+
+  test('a fully covered item vanishes', () => {
+    assert.deepEqual(trimTextItem('secret', 0, 60, 0, 12, [box(-5, -5, 100, 30)]), [])
   })
 })
