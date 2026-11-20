@@ -1,6 +1,6 @@
 const FALLBACK_INFO = {
   name: 'Basic PDF',
-  version: '3.1.0',
+  version: '3.1.2',
   description: 'A lightweight desktop PDF editor',
   author: 'barrven',
   license: 'MIT',

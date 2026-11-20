@@ -31,7 +31,7 @@ The visible name is **Basic PDF** (`productName` in `package.json` and `src-taur
 
 `package.json` `"name"` must stay a valid npm package id (`basic-pdf`: lowercase, no spaces). Do not change `"name"` to the display name.
 
-The version (currently 3.1.0) is repeated in four places that must be bumped together: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, and the fallback in `src/about.js`. The About dialog shows the version the shell reports (`get_app_info`, from `tauri.conf.json`); the `src/about.js` value is used only if that call fails. The installer file name carries it too (`Basic PDF_3.1.0_x64-setup.exe`).
+The version (currently 3.1.2) is repeated in four places that must be bumped together: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, and the fallback in `src/about.js`. The About dialog shows the version the shell reports (`get_app_info`, from `tauri.conf.json`); the `src/about.js` value is used only if that call fails. The installer file name carries it too (`Basic PDF_3.1.2_x64-setup.exe`).
 
 ## Architecture
 
