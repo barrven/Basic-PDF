@@ -19,6 +19,11 @@ export function initAbout() {
     })
   }
 
+  document.getElementById('about-github')?.addEventListener('click', (e) => {
+    e.preventDefault()
+    window.nativeAPI?.openExternal(e.currentTarget.href).catch(console.error)
+  })
+
   loadAppInfo()
 }
 

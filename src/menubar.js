@@ -48,7 +48,7 @@ const MENUS = [
         enabled: (c) => c.fileOpen && !c.busy,
       },
       { sep: true },
-      { id: 'close-file', label: 'Close File', run: () => closeFile(), enabled: (c) => c.fileOpen && !c.busy },
+      { id: 'close-file', label: 'Close File', shortcut: 'Ctrl+W', run: () => closeFile(), enabled: (c) => c.fileOpen && !c.busy },
     ],
   },
   {

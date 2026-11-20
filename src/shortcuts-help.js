@@ -6,6 +6,7 @@ const GROUPS = [
       ['Save', 'Ctrl+S'],
       ['Save As', 'Ctrl+Shift+S'],
       ['Print', 'Ctrl+P'],
+      ['Close file (or the window if none is open)', 'Ctrl+W'],
     ],
   },
   {

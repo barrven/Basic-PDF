@@ -167,6 +167,19 @@ describe('keyboard shortcuts', () => {
   })
 })
 
+describe('close file / window and About link', () => {
+  test('Ctrl+W closes the open file, or the window when none is open', () => {
+    assert.match(srcText['shortcuts.js'], /e\.key === 'w'[\s\S]{0,160}appState\.filePath\) await closeFile\(\)[\s\S]{0,40}nativeAPI\.closeWindow\(\)/)
+    assert.match(srcText['menubar.js'], /id: 'close-file'.*shortcut: 'Ctrl\+W'/)
+    assert.match(read('src-tauri/src/bridge.js'), /closeWindow: \(\) => invoke\('window_close'\)/)
+  })
+
+  test('About dialog links to the GitHub repository through openExternal', () => {
+    assert.match(read('index.html'), /id="about-github"[^>]*>|href="https:\/\/github\.com\/barrven\/Basic-PDF"/)
+    assert.match(srcText['about.js'], /about-github[\s\S]{0,200}openExternal\(/)
+  })
+})
+
 describe('print', () => {
   test('File menu has Print wired to printDocument, and Ctrl+P is intercepted', () => {
     assert.match(srcText['menubar.js'], /id: 'print'[^\n]*printDocument\(\)/)
