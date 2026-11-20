@@ -57,7 +57,7 @@ npm run test:rust    # signing code in the Rust shell
 
 The renderer suite covers the state store, the save pipeline (page assembly, rotation, highlights, redaction fallback, markup, stamps, forms, the signature placeholder), the unsaved-changes flow, and cross-file contracts such as the JS/Rust command list and the version number. See `test/README.md` for what it can and cannot see and how to add tests.
 
-CI runs both suites (`.github/workflows/test.yml`) and `npm audit --audit-level=high` (`.github/workflows/security.yml`) on push and pull request; the audit also runs weekly.
+CI runs both suites (`.github/workflows/test.yml`) and a security audit (`.github/workflows/security.yml`) on push and pull request. The audit checks npm packages (`npm audit --audit-level=high`) and the Rust lockfile (`cargo audit`), and it also runs every Monday at 08:00 UTC. It can be started by hand from the Actions tab once that file is on `master`.
 
 ## Keyboard shortcuts
 

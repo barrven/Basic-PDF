@@ -23,7 +23,7 @@ npm test             # renderer regression suite in test/ (node:test, Node 26+)
 npm run test:rust    # signing code: cargo test --lib in src-tauri
 ```
 
-`.github/workflows/test.yml` runs both on push and pull request; `.github/workflows/security.yml` runs `npm audit --audit-level=high` on push, pull request, and weekly (Monday 08:00 UTC). See the Tests section below and `test/README.md`.
+`.github/workflows/test.yml` runs both on push and pull request. `.github/workflows/security.yml` runs `npm audit --audit-level=high` and `cargo audit` (via `rustsec/audit-check`) on push, pull request, `workflow_dispatch`, and weekly (Monday 08:00 UTC). See the Tests section below and `test/README.md`.
 
 ### App name and version
 
