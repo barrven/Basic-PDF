@@ -113,7 +113,8 @@ function modalIsOpen() {
   const m = document.getElementById('modal-backdrop')
   const e = document.getElementById('error-modal-backdrop')
   const a = document.getElementById('about-modal-backdrop')
-  return (m && !m.hidden) || (e && !e.hidden) || (a && !a.hidden)
+  const s = document.getElementById('shortcuts-modal-backdrop')
+  return (m && !m.hidden) || (e && !e.hidden) || (a && !a.hidden) || (s && !s.hidden)
 }
 
 function onPreviewWheel(e) {

@@ -6,12 +6,30 @@ import { textSelectionIsActive, textSelectionIsNonCollapsed, selectAllTextInActi
 import { openFindBar, closeFindBar, isFindBarOpen } from './search.js'
 import { closeThemePopover, isThemePopoverOpen } from './theme.js'
 import { closeAboutModal, isAboutModalOpen } from './about.js'
+import { closeShortcutsModal, isShortcutsModalOpen } from './shortcuts-help.js'
 import { closeMenu, isMenuOpen } from './menubar.js'
 import { getActiveTool, setTool } from './markup.js'
 import { applyHighlightFromSelection, hideAnnotatePopover, isAnnotatePopoverOpen } from './annotate.js'
 
 export function initShortcuts() {
   document.addEventListener('keydown', onKeyDown)
+  // Suppress the WebView2 default context menu (Back / Reload / Inspect). The thumbnail list
+  // shows its own native menu from its own handler (which already called preventDefault);
+  // elsewhere, a native menu with only "Copy" is offered when text is selected.
+  document.addEventListener('contextmenu', async (e) => {
+    const handled = e.defaultPrevented
+    e.preventDefault()
+    if (handled) return
+    const text = window.getSelection()?.toString() ?? ''
+    if (!text) return
+    const choice = await window.nativeAPI.showContextMenu(['Copy'])
+    if (choice !== 'Copy') return
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      document.execCommand('copy')
+    }
+  })
   // Stop Chromium from zooming the whole window; preview handles Ctrl/Cmd+wheel itself.
   document.addEventListener('wheel', (e) => {
     if (e.ctrlKey || e.metaKey) e.preventDefault()
@@ -27,11 +45,16 @@ function isTypingTarget(el) {
 function modalIsOpen() {
   const m = document.getElementById('modal-backdrop')
   const e = document.getElementById('error-modal-backdrop')
-  return (m && !m.hidden) || (e && !e.hidden) || isAboutModalOpen()
+  return (m && !m.hidden) || (e && !e.hidden) || isAboutModalOpen() || isShortcutsModalOpen()
 }
 
 async function onKeyDown(e) {
   const mod = e.metaKey || e.ctrlKey
+  // WebView2 reloads the page on F5 / Ctrl+R / Ctrl+Shift+R, which would drop the open document.
+  if (e.key === 'F5' || (mod && (e.key === 'r' || e.key === 'R'))) {
+    e.preventDefault()
+    return
+  }
   if (mod && !e.shiftKey && (e.key === 'f' || e.key === 'F')) {
     e.preventDefault()
     if (!modalIsOpen()) openFindBar()
@@ -114,6 +137,10 @@ async function onKeyDown(e) {
     }
     if (isMenuOpen()) {
       closeMenu()
+      return
+    }
+    if (isShortcutsModalOpen()) {
+      closeShortcutsModal()
       return
     }
     if (isAboutModalOpen()) {

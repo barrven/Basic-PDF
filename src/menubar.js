@@ -4,6 +4,7 @@ import { insertPdfFile, deleteSelectedPages, rotateSelected } from './toolbar.js
 import { showSignatureModal } from './signature.js'
 import { openFindBar } from './search.js'
 import { openAboutModal } from './about.js'
+import { openShortcutsModal } from './shortcuts-help.js'
 import { closeThemePopover } from './theme.js'
 import { showToast, showErrorModal } from './main.js'
 
@@ -82,6 +83,8 @@ const MENUS = [
     id: 'help',
     label: 'Help',
     items: [
+      { id: 'shortcuts', label: 'Keyboard Shortcuts', run: () => openShortcutsModal(), enabled: () => true },
+      { sep: true },
       { id: 'about', label: 'About Basic PDF', run: () => openAboutModal(), enabled: () => true },
     ],
   },
