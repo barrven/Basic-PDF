@@ -166,3 +166,17 @@ describe('keyboard shortcuts', () => {
     }
   })
 })
+
+describe('print', () => {
+  test('File menu has Print wired to printDocument, and Ctrl+P is intercepted', () => {
+    assert.match(srcText['menubar.js'], /id: 'print'[^\n]*printDocument\(\)/)
+    assert.match(srcText['shortcuts.js'], /e\.key === 'p'[\s\S]{0,80}preventDefault\(\)[\s\S]{0,80}printDocument\(\)/)
+    assert.match(srcText['pdf-engine.js'], /export async function printDocument/)
+  })
+
+  test('print CSS hides everything except #print-root', () => {
+    const css = read('src/style.css')
+    assert.match(css, /@media print[\s\S]*body > \*:not\(#print-root\)\s*\{\s*display: none !important/)
+    assert.match(css, /#print-root \{ display: none; \}/)
+  })
+})
