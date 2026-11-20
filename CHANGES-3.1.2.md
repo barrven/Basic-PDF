@@ -25,16 +25,6 @@ Covers the 11 commits on `dev` that are not yet in `master` (previous release: 3
 - Print: single-page output and slow printing of large documents.
 - Print: broken ellipsis in the progress label.
 
-## Tests and docs
-
-- New unit tests for text-item trimming around redactions, and contract tests for the print wiring, print CSS and the shortcuts modal.
-- `CLAUDE.md` updated for the print, redaction, shortcut and context-menu behaviour.
-
-## Housekeeping before release
-
-- `link test.pdf` was added to the repo root with the link commit. Remove it if it was only a test fixture.
-- Bump the version to 3.1.2 in all four places: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json` and the fallback in `src/about.js`. Also update the version mentioned in `CLAUDE.md`.
-
 ## Commits
 
 | Commit | Summary |
