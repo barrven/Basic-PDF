@@ -575,7 +575,7 @@ export async function printDocument() {
       root.id = 'print-root'
       document.body.appendChild(root)
       for (let i = 1; i <= pdf.numPages; i++) {
-        if (label) label.textContent = `Preparing to print… page ${i} of ${pdf.numPages}`
+        if (label) label.textContent = `Preparing to printâ€¦ page ${i} of ${pdf.numPages}`
         const page = await pdf.getPage(i)
         const base = page.getViewport({ scale: 1 })
         const vp = page.getViewport({ scale: PRINT_MAX_EDGE / Math.max(base.width, base.height) })
@@ -595,7 +595,7 @@ export async function printDocument() {
         await img.decode().catch(() => {})
       }
       await pdf.destroy()
-    }, 'Preparing to print…')
+    }, 'Preparing to printâ€¦')
     window.addEventListener('afterprint', cleanup, { once: true })
     window.print()
   } catch (err) {
