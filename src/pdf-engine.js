@@ -566,15 +566,22 @@ export async function printDocument() {
     root = null
     urls.splice(0).forEach((u) => URL.revokeObjectURL(u))
   }
+  let cancelled = false
+  const cancelBtn = document.getElementById('loading-cancel')
+  const onCancel = () => { cancelled = true }
+  cancelBtn?.addEventListener('click', onCancel)
   try {
     await withDocumentLoading(async () => {
       const label = document.querySelector('#loading-overlay p')
+      if (cancelBtn) cancelBtn.hidden = false
       const bytes = await (await buildOutputDoc()).save()
+      if (cancelled) return
       const pdf = await openIsolatedPdf(bytes)
       root = document.createElement('div')
       root.id = 'print-root'
       document.body.appendChild(root)
       for (let i = 1; i <= pdf.numPages; i++) {
+        if (cancelled) break
         if (label) label.textContent = `Preparing to print… page ${i} of ${pdf.numPages}`
         const page = await pdf.getPage(i)
         const base = page.getViewport({ scale: 1 })
@@ -596,11 +603,19 @@ export async function printDocument() {
       }
       await pdf.destroy()
     }, 'Preparing to print…')
+    if (cancelled) {
+      cleanup()
+      showToast('Print cancelled', 2000)
+      return
+    }
     window.addEventListener('afterprint', cleanup, { once: true })
     window.print()
   } catch (err) {
     cleanup()
     console.error(err)
     showErrorModal('Print failed: ' + (err && err.message ? err.message : String(err)))
+  } finally {
+    cancelBtn?.removeEventListener('click', onCancel)
+    if (cancelBtn) cancelBtn.hidden = true
   }
 }

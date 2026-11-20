@@ -908,6 +908,10 @@ button:disabled {
   display: none;
 }
 
+#loading-cancel[hidden] {
+  display: none;
+}
+
 #loading-overlay p {
   margin: 0;
   font-size: 13px;
