@@ -19,17 +19,19 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 percent-encoding = "2"
-der = { version = "0.7", features = ["std", "oid"] }
-cms = "0.2"
-x509-cert = { version = "0.2", features = ["builder"] }
-p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
-rsa = { version = "0.9", features = ["sha2"] }
-sha2 = "0.10"
-spki = "0.7"
-pkcs8 = { version = "0.10", features = ["std"] }
+der = { version = "0.8", features = ["std", "oid"] }
+# Exact pin: p12-keystore 0.4.1 already links this pre-release, and the
+# stable cms 0.2 line uses an incompatible der/spki stack.
+cms = "=0.3.0-rc.2"
+x509-cert = { version = "0.3", features = ["builder"] }
+p256 = { version = "0.14", features = ["ecdsa", "pkcs8"] }
+rsa = { version = "0.10", features = ["pkcs1v15"] }
+sha2 = "0.11"
+spki = "0.8"
+pkcs8 = { version = "0.11", features = ["std"] }
 base64 = "0.22"
 p12-keystore = "0.4.1"
-rand_core = { version = "0.6", features = ["getrandom"] }
+getrandom = "0.4"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }

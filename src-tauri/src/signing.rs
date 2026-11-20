@@ -20,16 +20,20 @@ use cms::signed_data::{
 use der::asn1::{ObjectIdentifier, OctetString, SetOfVec, UtcTime};
 use der::{Any, Decode, Encode};
 use p256::ecdsa::{DerSignature, SigningKey as P256Key};
+use p256::elliptic_curve::Generate;
 use p256::pkcs8::{DecodePrivateKey, EncodePrivateKey, EncodePublicKey};
-use rand_core::{OsRng, RngCore};
-use rsa::RsaPrivateKey;
+use rsa::PrivateKey as RsaPrivateKey;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use spki::{AlgorithmIdentifierOwned, SubjectPublicKeyInfoOwned};
+use spki::{AlgorithmIdentifierOwned, SubjectPublicKeyInfoOwned, SubjectPublicKeyInfoRef};
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::{AppHandle, Manager};
 use x509_cert::attr::Attribute;
-use x509_cert::builder::{Builder, CertificateBuilder, Profile};
+use x509_cert::builder::profile::BuilderProfile;
+use x509_cert::builder::{Builder, CertificateBuilder};
+use x509_cert::certificate::TbsCertificate;
+use x509_cert::ext::pkix::{BasicConstraints, KeyUsage, KeyUsages, SubjectKeyIdentifier};
+use x509_cert::ext::{Extension, ToExtension};
 use x509_cert::name::Name;
 use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
@@ -184,10 +188,14 @@ fn save_identities(app: &AppHandle, list: &[StoredIdentity]) -> CmdResult<()> {
     std::fs::write(path, text).map_err(|e| msg("identities file", e))
 }
 
-fn random_id() -> String {
+fn fill_random(bytes: &mut [u8]) -> CmdResult<()> {
+    getrandom::fill(bytes).map_err(|e| msg("random", e))
+}
+
+fn random_id() -> CmdResult<String> {
     let mut bytes = [0u8; 16];
-    OsRng.fill_bytes(&mut bytes);
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    fill_random(&mut bytes)?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 fn now_millis() -> i64 {
@@ -207,7 +215,7 @@ fn common_name(name: &Name) -> String {
 }
 
 fn cert_not_after_millis(cert: &Certificate) -> i64 {
-    cert.tbs_certificate.validity.not_after.to_unix_duration().as_millis() as i64
+    cert.tbs_certificate().validity().not_after.to_unix_duration().as_millis() as i64
 }
 
 fn load_key(alg: &str, pkcs8: &[u8]) -> CmdResult<Key> {
@@ -221,7 +229,7 @@ fn load_key(alg: &str, pkcs8: &[u8]) -> CmdResult<Key> {
 fn public_spki_der(key: &Key) -> CmdResult<Vec<u8>> {
     let doc = match key {
         Key::P256(k) => k.verifying_key().to_public_key_der(),
-        Key::Rsa(k) => rsa::RsaPublicKey::from(k.as_ref()).to_public_key_der(),
+        Key::Rsa(k) => k.to_public_key().to_public_key_der(),
     };
     doc.map(|d| d.as_bytes().to_vec()).map_err(|e| msg("public key", e))
 }
@@ -232,7 +240,7 @@ fn order_chain(key: &Key, certs: Vec<Certificate>) -> CmdResult<Vec<Certificate>
     let mut leaf = None;
     let mut rest = Vec::new();
     for c in certs {
-        let spki = c.tbs_certificate.subject_public_key_info.to_der().map_err(|e| msg("certificate", e))?;
+        let spki = c.tbs_certificate().subject_public_key_info().to_der().map_err(|e| msg("certificate", e))?;
         if leaf.is_none() && spki == want {
             leaf = Some(c);
         } else {
@@ -253,9 +261,9 @@ fn store_identity(
     chain: &[Certificate],
 ) -> CmdResult<IdentityInfo> {
     let leaf = chain.first().ok_or("No certificate found.")?;
-    let subject = common_name(&leaf.tbs_certificate.subject);
-    let issuer = common_name(&leaf.tbs_certificate.issuer);
-    let self_signed = leaf.tbs_certificate.subject == leaf.tbs_certificate.issuer;
+    let subject = common_name(leaf.tbs_certificate().subject());
+    let issuer = common_name(leaf.tbs_certificate().issuer());
+    let self_signed = leaf.tbs_certificate().subject() == leaf.tbs_certificate().issuer();
     let chain_b64 = chain
         .iter()
         .map(|c| c.to_der().map(|d| B64.encode(d)).map_err(|e| msg("certificate", e)))
@@ -264,7 +272,7 @@ fn store_identity(
     let json = serde_json::to_vec(&material).map_err(|e| msg("identity", e))?;
     let protected = B64.encode(os_protect::protect(&json)?);
     let record = StoredIdentity {
-        id: random_id(),
+        id: random_id()?,
         label: if label.trim().is_empty() { subject.clone() } else { label.trim().to_string() },
         subject_cn: subject,
         issuer_cn: issuer,
@@ -279,6 +287,42 @@ fn store_identity(
     Ok(info)
 }
 
+/// Self-signed root profile matching the old `x509-cert` 0.2 `Profile::Root`:
+/// subject key identifier, `CA:true` with no path length, and key usage
+/// `keyCertSign` + `cRLSign`. The CABF root profile is not used because it
+/// rejects a subject that is only a common name.
+struct SelfSignedRoot {
+    subject: Name,
+}
+
+impl BuilderProfile for SelfSignedRoot {
+    fn get_issuer(&self, subject: &Name) -> Name {
+        subject.clone()
+    }
+
+    fn get_subject(&self) -> Name {
+        self.subject.clone()
+    }
+
+    fn build_extensions(
+        &self,
+        spk: SubjectPublicKeyInfoRef<'_>,
+        _issuer_spk: SubjectPublicKeyInfoRef<'_>,
+        _tbs: &TbsCertificate,
+    ) -> x509_cert::builder::Result<Vec<Extension>> {
+        let mut extensions = Vec::new();
+        let subject = self.subject.clone();
+        extensions.push(SubjectKeyIdentifier::try_from(spk)?.to_extension(&subject, &extensions)?);
+        extensions.push(
+            BasicConstraints { ca: true, path_len_constraint: None }.to_extension(&subject, &extensions)?,
+        );
+        extensions.push(
+            KeyUsage(KeyUsages::KeyCertSign | KeyUsages::CRLSign).to_extension(&subject, &extensions)?,
+        );
+        Ok(extensions)
+    }
+}
+
 fn make_self_signed(common_name: &str) -> CmdResult<(P256Key, Certificate)> {
     // Strip characters that would change the meaning of the RFC 4514 name string.
     let cn: String = common_name
@@ -290,18 +334,18 @@ fn make_self_signed(common_name: &str) -> CmdResult<(P256Key, Certificate)> {
     if cn.is_empty() {
         return Err("Enter a name for the certificate.".into());
     }
-    let key = P256Key::random(&mut OsRng);
-    let spki = SubjectPublicKeyInfoOwned::from_key(*key.verifying_key()).map_err(|e| msg("public key", e))?;
+    let key = P256Key::generate();
+    let spki = SubjectPublicKeyInfoOwned::from_key(key.verifying_key()).map_err(|e| msg("public key", e))?;
     let subject = Name::from_str(&format!("CN={cn}")).map_err(|e| msg("name", e))?;
     let validity = Validity::from_now(Duration::from_secs(5 * 365 * 24 * 3600)).map_err(|e| msg("validity", e))?;
     let mut serial_bytes = [0u8; 8];
-    OsRng.fill_bytes(&mut serial_bytes);
+    fill_random(&mut serial_bytes)?;
     serial_bytes[0] &= 0x7f;
     serial_bytes[0] |= 0x01; // non-zero, positive
     let serial = SerialNumber::new(&serial_bytes).map_err(|e| msg("serial", e))?;
-    let builder = CertificateBuilder::new(Profile::Root, serial, validity, subject, spki, &key)
+    let builder = CertificateBuilder::new(SelfSignedRoot { subject }, serial, validity, spki)
         .map_err(|e| msg("certificate", e))?;
-    let cert = builder.build::<DerSignature>().map_err(|e| msg("certificate", e))?;
+    let cert = builder.build::<_, DerSignature>(&key).map_err(|e| msg("certificate", e))?;
     Ok((key, cert))
 }
 
@@ -348,10 +392,8 @@ fn build_cms(key: &Key, chain: &[Certificate], content_digest: &[u8]) -> CmdResu
             (sig.to_bytes().to_vec(), AlgorithmIdentifierOwned { oid: oid(OID_ECDSA_SHA256), parameters: None })
         }
         Key::Rsa(k) => {
-            use rsa::signature::{SignatureEncoding, Signer};
-            let signer = rsa::pkcs1v15::SigningKey::<Sha256>::new((**k).clone());
-            let sig = signer.sign(&to_sign);
-            (sig.to_vec(), AlgorithmIdentifierOwned { oid: oid(OID_RSA_SHA256), parameters: Some(Any::null()) })
+            let sig = k.pkcs1v15_sign::<Sha256>(&to_sign).map_err(|e| msg("signature", e))?;
+            (sig, AlgorithmIdentifierOwned { oid: oid(OID_RSA_SHA256), parameters: Some(Any::null()) })
         }
     };
 
@@ -359,8 +401,8 @@ fn build_cms(key: &Key, chain: &[Certificate], content_digest: &[u8]) -> CmdResu
     let signer_info = SignerInfo {
         version: CmsVersion::V1,
         sid: SignerIdentifier::IssuerAndSerialNumber(IssuerAndSerialNumber {
-            issuer: leaf.tbs_certificate.issuer.clone(),
-            serial_number: leaf.tbs_certificate.serial_number.clone(),
+            issuer: leaf.tbs_certificate().issuer().clone(),
+            serial_number: leaf.tbs_certificate().serial_number().clone(),
         }),
         digest_alg: sha256.clone(),
         signed_attrs: Some(signed_attrs),
@@ -633,6 +675,6 @@ mod tests {
     #[test]
     fn self_signed_name_is_sanitised() {
         let (_, cert) = make_self_signed("Evil, O=Corp").unwrap();
-        assert_eq!(common_name(&cert.tbs_certificate.subject), "Evil  O Corp");
+        assert_eq!(common_name(cert.tbs_certificate().subject()), "Evil  O Corp");
     }
 }
