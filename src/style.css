@@ -1853,12 +1853,15 @@ body.text-select-armed .preview-page .textLayer {
 @media print {
   @page { margin: 0; }
   body > *:not(#print-root) { display: none !important; }
-  html, body { background: #fff !important; }
+  /* The app shell fixes html/body to the viewport with overflow hidden,
+     which would clip the printout to one page. */
+  html, body { background: #fff !important; height: auto !important; width: auto !important; overflow: visible !important; }
   #print-root { display: block; }
   #print-root .print-page {
     display: block;
-    width: 100%;
-    height: auto;
+    width: 100vw;
+    height: 100vh;
+    object-fit: contain;
     break-after: page;
     page-break-after: always;
   }

@@ -554,36 +554,52 @@ export async function saveAs() {
 
 // Print only the document: render the output pages (edits, stamps, redactions
 // applied) to images in a print-only container; @media print hides the UI.
+// Pages are rendered one at a time into blob URLs so large files stay light.
+const PRINT_MAX_EDGE = 2200 // px on the long edge, about 200 dpi on Letter/A4
+
 export async function printDocument() {
   if (!appState.filePath) return
   let root = null
+  const urls = []
+  const cleanup = () => {
+    root?.remove()
+    root = null
+    urls.splice(0).forEach((u) => URL.revokeObjectURL(u))
+  }
   try {
-    const bytes = await withDocumentLoading(async () => (await buildOutputDoc()).save(), 'Preparing to printâ€¦')
-    const pdf = await openIsolatedPdf(bytes)
-    root = document.createElement('div')
-    root.id = 'print-root'
-    document.body.appendChild(root)
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i)
-      const base = page.getViewport({ scale: 1 })
-      const vp = page.getViewport({ scale: Math.min(2, 3000 / Math.max(base.width, base.height)) * 1.5 })
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.floor(vp.width)
-      canvas.height = Math.floor(vp.height)
-      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp, background: '#ffffff' }).promise
-      const img = document.createElement('img')
-      img.className = 'print-page'
-      img.src = canvas.toDataURL('image/png')
-      img.style.aspectRatio = `${base.width} / ${base.height}`
-      root.appendChild(img)
-      canvas.width = canvas.height = 0
-    }
-    const cleanup = () => { root?.remove(); root = null }
+    await withDocumentLoading(async () => {
+      const label = document.querySelector('#loading-overlay p')
+      const bytes = await (await buildOutputDoc()).save()
+      const pdf = await openIsolatedPdf(bytes)
+      root = document.createElement('div')
+      root.id = 'print-root'
+      document.body.appendChild(root)
+      for (let i = 1; i <= pdf.numPages; i++) {
+        if (label) label.textContent = `Preparing to print… page ${i} of ${pdf.numPages}`
+        const page = await pdf.getPage(i)
+        const base = page.getViewport({ scale: 1 })
+        const vp = page.getViewport({ scale: PRINT_MAX_EDGE / Math.max(base.width, base.height) })
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.floor(vp.width)
+        canvas.height = Math.floor(vp.height)
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp, background: '#ffffff' }).promise
+        const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'))
+        canvas.width = canvas.height = 0
+        page.cleanup()
+        const url = URL.createObjectURL(blob)
+        urls.push(url)
+        const img = document.createElement('img')
+        img.className = 'print-page'
+        img.src = url
+        root.appendChild(img)
+        await img.decode().catch(() => {})
+      }
+      await pdf.destroy()
+    }, 'Preparing to print…')
     window.addEventListener('afterprint', cleanup, { once: true })
-    await Promise.all([...root.querySelectorAll('img')].map((im) => im.decode().catch(() => {})))
     window.print()
   } catch (err) {
-    root?.remove()
+    cleanup()
     console.error(err)
     showErrorModal('Print failed: ' + (err && err.message ? err.message : String(err)))
   }
