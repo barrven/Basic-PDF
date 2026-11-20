@@ -1,5 +1,5 @@
 import { appState, dispatch } from './state.js'
-import { getPdfDocFor } from './renderer.js'
+import { getPdfDocFor, getPageTextContent } from './renderer.js'
 import { runButtonAction, runCalculations, extraActionsFor, fieldHiddenOverride, clearVisibility } from './form-actions.js'
 import { showToast } from './main.js'
 
@@ -145,16 +145,49 @@ function makeControl(annot, key, heightPx, scale) {
 
 // Transparent click target over a push button. pdf.js already painted the
 // button's own appearance on the canvas.
-function makeButtonOverlay(annot, viewport, entry, extras) {
+export function isActionableLink(annot) {
+  return !!annot && annot.subtype === 'Link' && !!(annot.url || annot.dest || annot.action) && Array.isArray(annot.rect)
+}
+
+// Plain-text web addresses. Word's "print to PDF" often drops the link
+// annotation and leaves only the text; other readers still make it clickable.
+const URL_RE = /(?:https?:\/\/|www\.)[^\s<>"'`]+/gi
+
+// items: pdf.js text items. Returns [{ url, rect: [x1, y1, x2, y2] }] in PDF
+// user space. Position inside an item is estimated from the character offset.
+export function findTextUrls(items) {
+  const out = []
+  for (const it of items || []) {
+    const str = it?.str
+    if (typeof str !== 'string' || str.length < 4 || !Array.isArray(it.transform)) continue
+    URL_RE.lastIndex = 0
+    let m
+    while ((m = URL_RE.exec(str))) {
+      let text = m[0].replace(/[.,;:!?)\]}]+$/, '')
+      if (text.length < 5) continue
+      const x = it.transform[4]
+      const y = it.transform[5]
+      const w = it.width || 0
+      const h = it.height || Math.abs(it.transform[3]) || 10
+      const x1 = x + (w * m.index) / str.length
+      const x2 = x + (w * (m.index + text.length)) / str.length
+      out.push({ url: /^www\./i.test(text) ? 'https://' + text : text, rect: [x1, y - h * 0.2, x2, y + h * 0.9] })
+    }
+  }
+  return out
+}
+
+function makeButtonOverlay(annot, viewport, entry, extras, kind = 'button') {
   const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(annot.rect)
   const el = document.createElement('button')
   el.type = 'button'
-  el.className = 'form-button'
+  el.className = kind === 'link' ? 'form-button form-link' : 'form-button'
+  if (kind === 'link') el.title = annot.url || ''
   el.style.left = Math.min(x1, x2) + 'px'
   el.style.top = Math.min(y1, y2) + 'px'
   el.style.width = Math.abs(x2 - x1) + 'px'
   el.style.height = Math.abs(y2 - y1) + 'px'
-  el.setAttribute('aria-label', annot.alternativeText || annot.fieldName || 'Button')
+  el.setAttribute('aria-label', annot.alternativeText || annot.fieldName || annot.url || (kind === 'link' ? 'Link' : 'Button'))
   el.addEventListener('click', async () => {
     const handled = await runButtonAction(entry, annot, (key, value) => syncSiblings(null, key, value), extras, applyVisibility)
     if (!handled) showToast("This button's action isn't supported in Basic PDF")
@@ -167,7 +200,9 @@ export async function renderFormLayer(view, page, viewport, entry) {
   const layer = view.formLayer
   if (!layer) return 0
   layer.replaceChildren()
-  if (!pageHasForm(entry)) return 0
+  // Blank pages have nothing to read. Other pages are always scanned: link
+  // annotations exist in PDFs that have no form.
+  if (!entry || entry.originalIndex < 0) return 0
   let annots
   try {
     annots = await page.getAnnotations({ intent: 'display' })
@@ -179,6 +214,11 @@ export async function renderFormLayer(view, page, viewport, entry) {
   const frag = document.createDocumentFragment()
   let count = 0
   for (const annot of annots) {
+    if (isActionableLink(annot)) {
+      frag.appendChild(makeButtonOverlay(annot, viewport, entry, [], 'link'))
+      count++
+      continue
+    }
     if (annot.subtype !== FILLABLE_SUBTYPE || !annot.fieldName) continue
     if (annot.pushButton) {
       if (!annot.isTooltipOnly && !annot.hidden) {
@@ -217,6 +257,23 @@ export async function renderFormLayer(view, page, viewport, entry) {
     wrap.appendChild(control)
     frag.appendChild(wrap)
     count++
+  }
+  // URLs that are only text, unless a real link annotation already covers them.
+  try {
+    const content = await getPageTextContent(entry.sourceId, entry.originalIndex)
+    const real = annots.filter(isActionableLink)
+    const redacts = appState.annotations.filter((a) => a.type === 'redact' && a.pageIndex === view.index)
+    for (const hit of findTextUrls(content?.items)) {
+      const [ax1, ay1, ax2, ay2] = hit.rect
+      if (real.some((a) => a.rect[0] < ax2 && a.rect[2] > ax1 && a.rect[1] < ay2 && a.rect[3] > ay1)) continue
+      const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(hit.rect)
+      const box = { x: Math.min(x1, x2) / scale, y: Math.min(y1, y2) / scale, width: Math.abs(x2 - x1) / scale, height: Math.abs(y2 - y1) / scale }
+      if (redacts.some((a) => a.rects.some((r) => rectOverlap(r, box)))) continue
+      frag.appendChild(makeButtonOverlay({ subtype: 'Link', url: hit.url, rect: hit.rect }, viewport, entry, [], 'link'))
+      count++
+    }
+  } catch (err) {
+    console.error('could not scan text for links', err)
   }
   layer.appendChild(frag)
   applyFormRedactionLocks(view)

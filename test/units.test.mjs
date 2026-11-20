@@ -7,7 +7,7 @@ installMocks()
 const { appState, dispatch } = await import('../src/state.js')
 const { findHitsInItems } = await import('../src/search.js')
 const { rectsOverlap, mergeLineRects, textItemVisualRect, filterHitsCoveredByRedactions } = await import('../src/annotate.js')
-const { fieldKey, pageFormKey, pageHasForm } = await import('../src/forms.js')
+const { fieldKey, pageFormKey, pageHasForm, isActionableLink, findTextUrls } = await import('../src/forms.js')
 const { isMarkup, pointToUnrotated } = await import('../src/markup-save.js')
 const store = await import('../src/store.js')
 
@@ -126,6 +126,23 @@ describe('forms helpers', () => {
     assert.equal(pageHasForm({ sourceId: 'primary', originalIndex: 1 }), false)
     assert.equal(pageHasForm({ sourceId: null, originalIndex: -1 }), false)
     assert.equal(pageHasForm(null), false)
+  })
+  test('findTextUrls finds plain-text addresses and trims punctuation', () => {
+    const item = (str) => ({ str, transform: [12, 0, 0, 12, 72, 700], width: 100, height: 12 })
+    const hits = findTextUrls([item('https://music.youtube.com/watch?v=1&list=2'), item('see www.example.com.'), item('no link here')])
+    assert.equal(hits.length, 2)
+    assert.equal(hits[0].url, 'https://music.youtube.com/watch?v=1&list=2')
+    assert.deepEqual([hits[0].rect[0], hits[0].rect[2]], [72, 172])
+    assert.equal(hits[1].url, 'https://www.example.com')
+    assert.ok(hits[1].rect[0] > 72 && hits[1].rect[2] < 172)
+  })
+  test('isActionableLink accepts Link annotations with a target (even on pages with no form)', () => {
+    const rect = [0, 0, 10, 10]
+    assert.equal(isActionableLink({ subtype: 'Link', url: 'https://example.com/', rect }), true)
+    assert.equal(isActionableLink({ subtype: 'Link', dest: 'chapter1', rect }), true)
+    assert.equal(isActionableLink({ subtype: 'Link', rect }), false)
+    assert.equal(isActionableLink({ subtype: 'Widget', url: 'https://example.com/', rect }), false)
+    assert.equal(isActionableLink(null), false)
   })
 })
 
