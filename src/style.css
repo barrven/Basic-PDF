@@ -1801,3 +1801,20 @@ body.markup-tool-active .annot-form-layer .form-widget {
 body.text-select-armed .preview-page .textLayer {
   cursor: text;
 }
+
+/* Printing: only the document (#print-root), never the app interface. */
+#print-root { display: none; }
+@media print {
+  @page { margin: 0; }
+  body > *:not(#print-root) { display: none !important; }
+  html, body { background: #fff !important; }
+  #print-root { display: block; }
+  #print-root .print-page {
+    display: block;
+    width: 100%;
+    height: auto;
+    break-after: page;
+    page-break-after: always;
+  }
+  #print-root .print-page:last-child { break-after: auto; page-break-after: auto; }
+}

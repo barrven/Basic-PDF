@@ -1,5 +1,5 @@
 import { appState, dispatch } from './state.js'
-import { openFile, save, saveAs, closeFile } from './pdf-engine.js'
+import { openFile, save, saveAs, closeFile, printDocument } from './pdf-engine.js'
 import { insertPdfFile, deleteSelectedPages, rotateSelected } from './toolbar.js'
 import { showSignatureModal } from './signature.js'
 import { openFindBar } from './search.js'
@@ -17,6 +17,7 @@ const MENUS = [
       { sep: true },
       { id: 'save', label: 'Save', shortcut: 'Ctrl+S', run: () => save(), enabled: (c) => c.fileOpen && !c.busy },
       { id: 'save-as', label: 'Save As…', shortcut: 'Ctrl+Shift+S', run: () => saveAs(), enabled: (c) => c.fileOpen && !c.busy },
+      { id: 'print', label: 'Print…', shortcut: 'Ctrl+P', run: () => printDocument(), enabled: (c) => c.fileOpen && !c.busy },
       { sep: true },
       { id: 'insert-pdf', label: 'Insert PDF…', run: () => insertPdfFile(), enabled: (c) => c.fileOpen && !c.busy },
       { sep: true },

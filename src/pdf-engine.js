@@ -551,3 +551,40 @@ export async function saveAs() {
     showErrorModal('Save failed: ' + (err && err.message ? err.message : String(err)))
   }
 }
+
+// Print only the document: render the output pages (edits, stamps, redactions
+// applied) to images in a print-only container; @media print hides the UI.
+export async function printDocument() {
+  if (!appState.filePath) return
+  let root = null
+  try {
+    const bytes = await withDocumentLoading(async () => (await buildOutputDoc()).save(), 'Preparing to print…')
+    const pdf = await openIsolatedPdf(bytes)
+    root = document.createElement('div')
+    root.id = 'print-root'
+    document.body.appendChild(root)
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i)
+      const base = page.getViewport({ scale: 1 })
+      const vp = page.getViewport({ scale: Math.min(2, 3000 / Math.max(base.width, base.height)) * 1.5 })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.floor(vp.width)
+      canvas.height = Math.floor(vp.height)
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp, background: '#ffffff' }).promise
+      const img = document.createElement('img')
+      img.className = 'print-page'
+      img.src = canvas.toDataURL('image/png')
+      img.style.aspectRatio = `${base.width} / ${base.height}`
+      root.appendChild(img)
+      canvas.width = canvas.height = 0
+    }
+    const cleanup = () => { root?.remove(); root = null }
+    window.addEventListener('afterprint', cleanup, { once: true })
+    await Promise.all([...root.querySelectorAll('img')].map((im) => im.decode().catch(() => {})))
+    window.print()
+  } catch (err) {
+    root?.remove()
+    console.error(err)
+    showErrorModal('Print failed: ' + (err && err.message ? err.message : String(err)))
+  }
+}

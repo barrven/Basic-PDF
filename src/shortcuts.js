@@ -1,5 +1,5 @@
 import { appState, dispatch } from './state.js'
-import { openFile, save, saveAs } from './pdf-engine.js'
+import { openFile, save, saveAs, printDocument } from './pdf-engine.js'
 import { exitPlacementMode, isPlacing } from './signature.js'
 import { deleteSelectedPages, rotateSelected } from './toolbar.js'
 import { textSelectionIsActive, textSelectionIsNonCollapsed, selectAllTextInActiveLayer } from './preview.js'
@@ -62,6 +62,11 @@ async function onKeyDown(e) {
   if (mod && e.shiftKey && (e.key === 's' || e.key === 'S')) {
     e.preventDefault()
     if (appState.filePath) await saveAs()
+    return
+  }
+  if (mod && !e.shiftKey && (e.key === 'p' || e.key === 'P')) {
+    e.preventDefault()
+    if (appState.filePath) await printDocument()
     return
   }
   if (mod && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
