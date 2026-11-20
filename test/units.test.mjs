@@ -189,3 +189,27 @@ describe('signature library store', () => {
     assert.equal(lib.at(-1).id, '24')
   })
 })
+
+describe('trimTextItem (text kept on a redacted page)', async () => {
+  const { trimTextItem } = await import('../src/pdf-engine.js')
+  const box = (x, y, width, height) => ({ x, y, width, height })
+
+  test('an item no box touches is kept whole', () => {
+    assert.deepEqual(trimTextItem('hello', 10, 50, 10, 22, [box(200, 10, 20, 12)]), [{ str: 'hello', left: 10, width: 50 }])
+  })
+
+  test('an item on another line is kept whole', () => {
+    assert.equal(trimTextItem('hello', 10, 50, 10, 22, [box(10, 100, 50, 12)]).length, 1)
+  })
+
+  test('only the covered characters are dropped', () => {
+    // 10 chars, 10pt each from x=0; the box covers chars 3..5.
+    const out = trimTextItem('0123456789', 0, 100, 0, 12, [box(30, 0, 30, 12)])
+    assert.deepEqual(out.map((p) => p.str), ['012', '6789'])
+    assert.equal(out[1].left, 60)
+  })
+
+  test('a fully covered item vanishes', () => {
+    assert.deepEqual(trimTextItem('secret', 0, 60, 0, 12, [box(-5, -5, 100, 30)]), [])
+  })
+})
