@@ -16,6 +16,7 @@ const MIN_SIZE = 3
 let tool = null
 let drag = null
 let editor = null
+let armed = null // 'highlight' | 'redact': text-selection mode waiting for a selection
 
 export function getActiveTool() {
   return tool
@@ -33,6 +34,22 @@ export function initMarkup() {
   document.addEventListener('pointermove', onPointerMove)
   document.addEventListener('pointerup', onPointerUp)
   document.addEventListener('pointercancel', cancelDrag)
+
+  // Text-selection mode: once the user finishes selecting text, apply the armed action.
+  document.addEventListener('mouseup', (e) => {
+    if (!armed || !e.target.closest?.('#preview-pages')) return
+    setTimeout(() => {
+      if (!armed) return
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed) return
+      const kind = armed
+      const ok = kind === 'highlight' ? applyHighlightFromSelection() : applyRedactFromSelection()
+      if (ok) setArmed(null)
+    }, 0)
+  })
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && armed) setArmed(null)
+  })
 
   // Pages are rebuilt on open / zoom / reorder; repaint markup when they are.
   new MutationObserver(paintAll).observe(host, { childList: true })
@@ -69,6 +86,7 @@ export function setTool(name) {
   closeEditor(true)
   cancelDrag()
   tool = tool === name ? null : name
+  if (tool) setArmed(null)
   if (tool && isPlacing()) exitPlacementMode()
   document.body.classList.toggle('markup-tool-active', !!tool)
   for (const btn of document.querySelectorAll('#markup-ribbon [data-tool]')) {
@@ -78,12 +96,40 @@ export function setTool(name) {
   }
 }
 
+function setArmed(kind) {
+  armed = kind
+  document.body.classList.toggle('text-select-armed', !!kind)
+  for (const [action, name] of [['markup-highlight', 'highlight'], ['markup-redact', 'redact']]) {
+    const btn = document.querySelector(`#markup-ribbon [data-action="${action}"]`)
+    if (!btn) continue
+    btn.classList.toggle('active', kind === name)
+    btn.setAttribute('aria-pressed', kind === name ? 'true' : 'false')
+  }
+}
+
+// Highlight / Redact: leave any drawing tool so the cursor selects text. With
+// text already selected the action applies at once; otherwise the button stays
+// armed and applies to the next selection (click again or Esc to cancel).
+function textAction(kind, apply) {
+  if (tool) setTool(tool) // toggles the drawing tool off
+  if (apply()) {
+    setArmed(null)
+    return
+  }
+  if (armed === kind) {
+    setArmed(null)
+    return
+  }
+  setArmed(kind)
+  showToast(`Select the text to ${kind}.`, 2500)
+}
+
 export function markupHighlight() {
-  if (!applyHighlightFromSelection()) showToast('Select some text first, then click Highlight.', 2500)
+  textAction('highlight', applyHighlightFromSelection)
 }
 
 export function markupRedact() {
-  if (!applyRedactFromSelection()) showToast('Select some text first, then click Redact.', 2500)
+  textAction('redact', applyRedactFromSelection)
 }
 
 function currentStyle() {

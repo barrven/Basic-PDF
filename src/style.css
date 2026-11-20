@@ -1796,3 +1796,8 @@ body.markup-tool-active .annot-form-layer .form-widget {
   border-radius: 50%;
   pointer-events: none;
 }
+
+/* Highlight / Redact armed: the cursor selects text. */
+body.text-select-armed .preview-page .textLayer {
+  cursor: text;
+}

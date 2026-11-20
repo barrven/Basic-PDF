@@ -103,7 +103,7 @@ The renderer must not use `window.confirm`: `tauri-plugin-dialog` replaces it wi
 | `src/pdf-engine.js` | pdf-lib wrapper — open, save, saveAs, close, OS `openPath`, `buildOutputDoc` (highlights, redaction flatten, stamps) |
 | `src/menubar.js` | Title-bar File / Edit / Help dropdown menus (open, save, undo/redo, find, page ops, About) |
 | `src/toolbar.js` | Toolbar (Markup toggle, page counter, zoom), expandable markup ribbon (placeholder tools + Signature), insert/delete/rotate helpers |
-| `src/markup.js` | Markup tools from the ribbon: text, rectangle, ellipse, line, freehand. Pointer drawing, text editor, SVG `.markup-layer` per page, click-to-select |
+| `src/markup.js` | Markup tools from the ribbon: text, rectangle, ellipse, line, freehand. Highlight / Redact buttons leave any drawing tool and arm text-selection mode (applies to the next selection; Esc or a second click cancels). Pointer drawing, text editor, SVG `.markup-layer` per page, click-to-select |
 | `src/markup-save.js` | Draws markup annotations into the saved PDF (pdf-lib, rotation-aware) and onto redaction-flattened pages (canvas) |
 | `src/forms.js` | Fillable AcroForm widgets (text, checkbox, radio, dropdown, list): detection, DOM controls, edits into `appState.fieldValues`, values for redaction-flattened pages |
 | `src/form-actions.js` | Push-button actions (GoTo, Named, URI after a confirm, ResetForm) and `AFSimple_Calculate` recalculation. No PDF JavaScript engine: scripts are never run; Hide/Show/Submit buttons are unsupported and show a toast |
