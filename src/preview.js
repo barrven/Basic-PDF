@@ -951,6 +951,24 @@ export function scrollPreviewToFocused(opts = {}) {
   })
 }
 
+// Scroll so a point `yRatio` (0 = top, 1 = bottom) down page `pageIndex` sits at
+// the top of the preview viewport. Used by the outline to land on a heading.
+export function scrollPreviewToPageOffset(pageIndex, yRatio) {
+  const view = pageViews[pageIndex]
+  const pane = document.getElementById('preview-pane')
+  if (!view || !pane) return
+  const ratio = Math.min(1, Math.max(0, Number.isFinite(yRatio) ? yRatio : 0))
+  const paneRect = pane.getBoundingClientRect()
+  const elRect = view.el.getBoundingClientRect()
+  const pageTop = elRect.top - paneRect.top + pane.scrollTop
+  const top = pageTop + view.el.offsetHeight * ratio - 12 // small margin above the heading
+  ignoreScrollSync = true
+  pane.scrollTo({ top: Math.max(0, top), behavior: 'auto' })
+  requestAnimationFrame(() => {
+    ignoreScrollSync = false
+  })
+}
+
 function initOverlayInteractions() {
   const host = document.getElementById('preview-pages')
 
